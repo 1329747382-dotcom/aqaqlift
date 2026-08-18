@@ -1,0 +1,18 @@
+{
+  "id": "floating-life",
+  "name": "浮生",
+  "version": "1.0.0",
+  "description": "一场醒来就忘的梦。仅读取人设、角色和世界书，构成一次封闭的平行宇宙角色扮演，其内生成的信息不与外部其他功能共享。",
+  "author": "FloatingLife",
+  "trustLevel": "full",
+  "entry": "https://raw.githubusercontent.com/1329747382-dotcom/aqaqlife/main/floating-life-plugin.js",
+  "hash": "",
+  "permissions": [
+    "persona:read",
+    "character:read",
+    "worldbook:read",
+    "ai:chat",
+    "storage",
+    "ui"
+  ]
+}
