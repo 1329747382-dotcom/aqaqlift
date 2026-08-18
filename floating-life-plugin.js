@@ -12,9 +12,41 @@
   const SUMMARY_KEEP_LAST = 8;
 
   // ========== 工具函数 ==========
+  function extractJSON(text) {
+    if (!text) return text;
+    let t = text.replace(/<think(?:ing)?[\s\S]*?<\/think(?:ing)?>/gi, '');
+    t = t.replace(/```json/gi, '').replace(/```/g, '');
+    let pos = 0, firstMatch = null;
+    while (pos < t.length) {
+      const bi = t.indexOf('{', pos), ki = t.indexOf('[', pos);
+      let start = -1, open, close;
+      if (bi >= 0 && (ki < 0 || bi < ki)) { start = bi; open = '{'; close = '}'; }
+      else if (ki >= 0) { start = ki; open = '['; close = ']'; }
+      else break;
+      let depth = 0, inStr = false, esc = false, end = -1;
+      for (let i = start; i < t.length; i++) {
+        const ch = t[i];
+        if (esc) { esc = false; continue; }
+        if (ch === '\\' && inStr) { esc = true; continue; }
+        if (ch === '"') { inStr = !inStr; continue; }
+        if (!inStr) {
+          if (ch === open) depth++;
+          else if (ch === close) { depth--; if (depth === 0) { end = i; break; } }
+        }
+      }
+      if (end < 0) break;
+      const cand = t.slice(start, end + 1);
+      if (firstMatch === null) firstMatch = cand;
+      try { JSON.parse(cand); return cand; } catch (e) { pos = end + 1; }
+    }
+    return firstMatch ?? t.trim();
+  }
   function safeParseJSON(text, context) {
     try { return JSON.parse(text); }
-    catch (e) { throw new Error(`浮生：${context}返回的内容无法解析为 JSON`); }
+    catch (e) {
+      try { return JSON.parse(extractJSON(text)); }
+      catch (e2) { throw new Error(`浮生：${context}返回的内容无法解析为 JSON`); }
+    }
   }
 
   function getPerspectiveText(perspective, userName, userGender) {
