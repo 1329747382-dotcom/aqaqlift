@@ -76,8 +76,8 @@
   function getPerspectiveText(perspective, userName, userGender) {
     const pronoun = (userGender === '男' || userGender === '男性') ? '他' : '她';
     switch (perspective) {
-      case 'second-person': return '使用第二人称叙事，称呼用户为「你」。';
-      case 'first-person': return '使用第一人称叙事，称呼角色自己为「我」，让读者代入该角色。';
+      case 'second-person': return '使用第二人称叙事，自称「我」，称呼用户为「你」。';
+      case 'first-person': return '使用第一人称叙事，称呼角色自己为「我」，用户不参与故事只引导角色的故事走向。';
       default: return `使用第三人称有限视角叙事，称呼用户角色为「${userName}」或「${pronoun}」。`;
     }
   }
@@ -96,18 +96,7 @@
       if (char.gender) lines.push(`性别：${char.gender}`);
       if (char.bio) lines.push(`简介：${char.bio}`);
       const personaText = char.persona || char.background || char.description || '';
-      const mountedIds = new Set(char.mountedWorldBookIds || char.worldBookIds || []);
-      const lore = (worldBooks || []).filter(w =>
-        (w.categoryId === 'lore' || w.category === 'lore') &&
-        mountedIds.has(w.id) && selectedWBIds.includes(w.id)
-      );
-      if (lore.length > 0) { lines.push('补充背景知识：'); lore.forEach(w => lines.push(`- ${w.title || w.name}：${w.content || w.text}`)); }
       if (personaText) lines.push(`人设：${personaText}`);
-      const patches = (worldBooks || []).filter(w =>
-        (w.categoryId === 'patch' || w.category === 'patch') &&
-        mountedIds.has(w.id) && selectedWBIds.includes(w.id)
-      );
-      if (patches.length > 0) { lines.push('灵魂补丁：'); patches.forEach(w => lines.push(`- ${w.title || w.name}：${w.content || w.text}`)); }
       return lines.join('\n');
     }).join('\n---\n');
   }
@@ -138,7 +127,7 @@
     return (segments || []).map(seg => {
       if (seg.type === 'narration') return seg.text;
       const action = seg.action ? `（${seg.action}）` : '';
-      return `${seg.character}${action}：「${seg.text}」`;
+      return `${seg.character}${action}："${seg.text}"`;
     }).join('\n');
   }
 
@@ -311,6 +300,9 @@ ${story}
       this._confirmDeleteId = null; // 两次确认删除
       this._showOldMessages = false; // 早期消息折叠状态
       this._freeText = ''; // 自由输入框内容
+      this._streamingText = ''; // 流式输出实时文本缓存
+      this._pickedChoiceId = null; // 最近点击填入输入框的选项ID
+      this._pickedChoiceText = ''; // 最近点击填入输入框的选项原文（用于判断用户是否修改）
     }
 
     async init() {
@@ -567,6 +559,25 @@ ${story}
         .roche-plugin-floating-life .fl-btn-sm {
           padding: 6px 10px; font-size: 11px;
         }
+        /* ===== 入梦按钮（朦胧美） ===== */
+        .roche-plugin-floating-life .fl-btn-dream {
+          font-family: "Songti SC", "SimSun", serif;
+          letter-spacing: 0.3em;
+          color: rgba(191, 219, 254, 0.55);
+          background: rgba(147, 197, 253, 0.06);
+          border: 1px solid rgba(147, 197, 253, 0.15);
+          text-shadow: 0 0 10px rgba(147, 197, 253, 0.25);
+          transition: all .3s;
+        }
+        .roche-plugin-floating-life .fl-btn-dream:hover:not(:disabled) {
+          background: rgba(147, 197, 253, 0.1);
+          color: rgba(191, 219, 254, 0.8);
+          border-color: rgba(147, 197, 253, 0.28);
+          text-shadow: 0 0 16px rgba(147, 197, 253, 0.4);
+        }
+        .roche-plugin-floating-life .fl-btn-dream:disabled {
+          opacity: 0.25; pointer-events: none;
+        }
 
         /* ===== 创建页 ===== */
         .roche-plugin-floating-life .fl-section-label {
@@ -697,7 +708,7 @@ ${story}
           border-bottom: 1px solid rgba(255, 255, 255, 0.04);
         }
         .roche-plugin-floating-life .fl-world-brief-scene {
-          font-size: 13px; line-height: 1.8;
+          font-size: 13px; line-height: 2.0;
           color: rgba(148, 163, 184, 0.8);
           font-family: "Songti SC", "SimSun", serif;
           text-indent: 2em; text-align: justify;
@@ -706,7 +717,7 @@ ${story}
           margin-top: 12px;
         }
         .roche-plugin-floating-life .fl-world-brief-role {
-          font-size: 12px; line-height: 1.7;
+          font-size: 12px; line-height: 1.9;
           color: rgba(100, 116, 139, 0.8);
           text-indent: 2em;
         }
@@ -723,7 +734,7 @@ ${story}
           border-radius: 8px; margin-bottom: 12px;
         }
         .roche-plugin-floating-life .fl-world-scene {
-          font-size: 14px; line-height: 1.8;
+          font-size: 14px; line-height: 2.0;
           color: #cbd5e1;
           font-family: "Songti SC", "SimSun", serif;
           text-indent: 2em; text-align: justify;
@@ -733,7 +744,7 @@ ${story}
           text-align: center;
         }
         .roche-plugin-floating-life .fl-world-char-role {
-          font-size: 14px; color: rgba(148, 163, 184, 0.7);
+          font-size: 14px; line-height: 1.9; color: rgba(148, 163, 184, 0.7);
           margin-top: 2px; text-indent: 2em;
         }
         .roche-plugin-floating-life .fl-parallel-label {
@@ -748,16 +759,18 @@ ${story}
 
         /* ===== 故事页 - 旁白 ===== */
         .roche-plugin-floating-life .fl-msg-narration {
-          font-size: 14px; line-height: 1.9;
+          font-size: 14px; line-height: 2.1;
           color: #cbd5e1;
           font-family: "Songti SC", "SimSun", serif;
           text-indent: 2em; text-align: justify;
-          margin-bottom: 8px;
+          margin-bottom: 14px;
+          padding-left: 12px;
+          border-left: 1px solid rgba(203, 213, 225, 0.25);
         }
 
         /* ===== 故事页 - 对话（带头像） ===== */
         .roche-plugin-floating-life .fl-msg-dialogue {
-          margin: 16px 0; text-align: center;
+          margin: 20px 0; text-align: center;
         }
         .roche-plugin-floating-life .fl-dialogue-avatar {
           width: 36px; height: 36px; border-radius: 9999px;
@@ -774,14 +787,14 @@ ${story}
           text-transform: uppercase;
         }
         .roche-plugin-floating-life .fl-msg-action {
-          font-size: 13px; line-height: 1.8;
+          font-size: 13px; line-height: 2.0;
           color: rgba(129, 140, 248, 0.4);
           font-style: italic;
           font-family: "Songti SC", "SimSun", serif;
-          margin-bottom: 6px; text-indent: 2em; text-align: justify;
+          margin-bottom: 10px; text-indent: 2em; text-align: justify;
         }
         .roche-plugin-floating-life .fl-msg-text {
-          font-size: 14px; line-height: 1.9;
+          font-size: 14px; line-height: 2.1;
           color: rgba(226, 232, 240, 0.85);
           font-family: "Songti SC", "SimSun", serif;
           text-indent: 2em; text-align: justify;
@@ -795,7 +808,7 @@ ${story}
           max-width: 80%; padding: 10px 16px;
           background: rgba(96, 165, 250, 0.04);
           border: 1px solid rgba(147, 197, 253, 0.08);
-          border-radius: 8px; font-size: 13px;
+          border-radius: 8px; font-size: 13px; line-height: 1.8;
           color: rgba(191, 219, 254, 0.4);
           font-family: "Songti SC", "SimSun", serif;
         }
@@ -853,7 +866,7 @@ ${story}
         }
         .roche-plugin-floating-life .fl-choice-text {
           font-size: 13px; color: rgba(148, 163, 184, 0.8);
-          font-family: "Songti SC", "SimSun", serif; line-height: 1.5; flex: 1;
+          font-family: "Songti SC", "SimSun", serif; line-height: 1.7; flex: 1;
         }
         .roche-plugin-floating-life .fl-choice-tag {
           font-size: 10px; color: rgba(71, 85, 105, 0.8);
@@ -931,7 +944,7 @@ ${story}
           letter-spacing: 6px; margin-bottom: 12px;
         }
         .roche-plugin-floating-life .fl-verdict-text {
-          font-size: 16px; line-height: 2;
+          font-size: 16px; line-height: 2.2;
           color: rgba(191, 219, 254, 0.6);
           font-family: "Songti SC", "SimSun", serif;
           max-width: 280px; margin: 0 auto;
@@ -990,6 +1003,18 @@ ${story}
           color: #e2e8f0;
         }
 
+        /* ===== 流式输出实时文本 ===== */
+        .roche-plugin-floating-life .fl-streaming-content {
+          font-size: 14px; line-height: 2.1;
+          color: #cbd5e1;
+          font-family: "Songti SC", "SimSun", serif;
+          text-indent: 2em; text-align: justify;
+          margin-bottom: 14px;
+          padding-left: 12px;
+          border-left: 1px solid rgba(203, 213, 225, 0.25);
+          white-space: pre-wrap;
+          min-height: 1px;
+        }
         /* ===== 底部锚点 ===== */
         .roche-plugin-floating-life .fl-bottom-anchor {
           height: 1px; width: 100%;
@@ -1006,9 +1031,9 @@ ${story}
         drop.className = 'fl-drop';
         drop.style.left = Math.random() * 100 + '%';
         drop.style.top = '0';
-        drop.style.width = '1px';
-        drop.style.height = (12 + Math.random() * 18) + 'px';
-        drop.style.setProperty('--drop-op', (0.06 + Math.random() * 0.12).toString());
+        drop.style.width = '1.5px';
+        drop.style.height = (15 + Math.random() * 25) + 'px';
+        drop.style.setProperty('--drop-op', (0.2 + Math.random() * 0.25).toString());
         const duration = 1.2 + Math.random() * 1.8;
         drop.style.animationDuration = duration + 's';
         drop.style.animationDelay = (-duration * Math.random()) + 's';
@@ -1046,14 +1071,35 @@ ${story}
 
     deleteSession(id) { this.sessions = this.sessions.filter(s => s.id !== id); this._save(); }
 
-    async _callAI(prompt, expectJSON) {
-      const r = await this.roche.ai.chat({
-        messages: [
-          { role:'system', content: expectJSON ? 'You are a helpful assistant. Please output valid JSON only.' : 'You are a helpful assistant.' },
-          { role:'user', content: prompt }
-        ],
-        temperature: 0.7
-      });
+    async _callAI(prompt, onDelta) {
+      // 温度：优先读取前端设置参数，读取失败则默认 0.7
+      let temperature = 0.7;
+      try {
+        if (this.roche.ai && typeof this.roche.ai.getConfig === 'function') {
+          const cfg = await this.roche.ai.getConfig();
+          if (cfg && cfg.temperature != null) temperature = cfg.temperature;
+        }
+      } catch(e) {}
+      const messages = [
+        { role:'system', content: 'You are a helpful assistant.' },
+        { role:'user', content: prompt }
+      ];
+      // 流式输出：传入 onDelta 回调时尝试流式调用，实时推送片段
+      if (typeof onDelta === 'function') {
+        try {
+          let full = '';
+          const r = await this.roche.ai.chat({
+            messages, temperature, stream: true,
+            onDelta: (delta) => { full += delta; onDelta(delta, full); }
+          });
+          // 部分实现流式结束后仍在返回值中携带完整文本
+          if (r && (r.text || r.content)) return r.text || r.content;
+          return full;
+        } catch(e) {
+          console.warn('浮生：流式调用失败，回退非流式模式', e);
+        }
+      }
+      const r = await this.roche.ai.chat({ messages, temperature });
       return r.text || r.content || '';
     }
 
@@ -1079,7 +1125,7 @@ ${story}
       return `<div class="fl-dialogue-avatar" style="background:${color}25;color:${color}">${esc(initial)}</div>`;
     }
 
-    async generateWorld(id) {
+    async generateWorld(id, onDelta) {
       const s = this.getSession(id); if (!s) throw new Error('会话不存在');
       const parts = this.characters.filter(c => s.participantIds.includes(c.id));
       const selectedWBIds = this._getSelectedWBIds(s);
@@ -1088,7 +1134,7 @@ ${story}
         characters: parts, perspective: s.perspective,
         userTheme: s.userTheme, worldBooks: this.worldBooks, selectedWBIds
       });
-      const raw = await this._callAI(prompt, true);
+      const raw = await this._callAI(prompt, onDelta);
       let d;
       try {
         d = safeParseJSON(raw, '世界观生成');
@@ -1130,7 +1176,7 @@ ${story}
       return this.updateSession(id, { messages: [...s.messages, msg], pendingOpening: undefined });
     }
 
-    async advanceStory(id, userInput, choiceId) {
+    async advanceStory(id, userInput, choiceId, onDelta) {
       const s = this.getSession(id); if (!s) throw new Error('会话不存在');
       if (s.status !== 'active') throw new Error('该会话已封存');
       const parts = this.characters.filter(c => s.participantIds.includes(c.id));
@@ -1144,7 +1190,7 @@ ${story}
         worldBooks: this.worldBooks, selectedWBIds,
         keepLast: SUMMARY_KEEP_LAST
       });
-      const raw = await this._callAI(prompt, true);
+      const raw = await this._callAI(prompt, onDelta);
       let d;
       try {
         d = safeParseJSON(raw, '故事推进');
@@ -1169,14 +1215,14 @@ ${story}
       return { segments: segs, text, choices, isEnding: !!d.isEnding };
     }
 
-    async regenerateLast(id) {
+    async regenerateLast(id, onDelta) {
       const s = this.getSession(id); if (!s) throw new Error('会话不存在');
       const msgs = s.messages;
       if (msgs.length < 2 || msgs[msgs.length-1].role !== 'narrator' || msgs[msgs.length-2].role !== 'user')
         throw new Error('没有可重新生成的内容');
       const last = msgs[msgs.length-2];
       this.updateSession(id, { messages: msgs.slice(0, -2) });
-      try { return await this.advanceStory(id, last.text, last.choiceId); }
+      try { return await this.advanceStory(id, last.text, last.choiceId, onDelta); }
       catch(e) { this.updateSession(id, { messages: msgs }); throw e; }
     }
 
@@ -1184,7 +1230,7 @@ ${story}
       const s = this.getSession(id); if (!s) throw new Error('会话不存在');
       const prompt = buildVerdictPrompt(s.worldSetting, s.summaries, s.messages);
       let verdict = '';
-      try { verdict = stripQuotes((await this._callAI(prompt, false)).trim()); }
+      try { verdict = stripQuotes((await this._callAI(prompt)).trim()); }
       catch(e) { verdict = '大梦一场，醒来皆忘。'; }
       return this.updateSession(id, { status: 'archived', archivedAt: Date.now(), verdict });
     }
@@ -1198,7 +1244,7 @@ ${story}
       const toSum = messages.slice(covered, end);
       if (toSum.length === 0) return;
       const prompt = buildSummaryPrompt(toSum, s.summaries);
-      const text = (await this._callAI(prompt, false)).trim();
+      const text = (await this._callAI(prompt)).trim();
       this.updateSession(id, { summaries: [...s.summaries, { text, coveredUpTo: end, generatedAt: Date.now() }] });
     }
 
@@ -1324,6 +1370,9 @@ ${story}
           this.sessionId = item.dataset.id;
           this._scrollTop = 0;
           this._showOldMessages = false;
+          this._freeText = '';
+          this._pickedChoiceId = null;
+          this._pickedChoiceText = '';
           this.page = 'story';
           this.render();
         };
@@ -1456,7 +1505,7 @@ ${story}
         <input type="text" id="fl-theme" placeholder="例：末日公路片、民国悬疑、赛博朋克…" value="${esc(this.draftTheme)}" />
       </div></div>
       <div class="fl-footer">
-        <button class="fl-btn fl-btn-primary fl-btn-block" id="fl-start-dream" ${this.selChars.length===0?'disabled':''}>开启这场梦</button>
+        <button class="fl-btn fl-btn-block fl-btn-dream" id="fl-start-dream" ${this.selChars.length===0?'disabled':''}>入梦</button>
       </div>`;
 
       this.pageEl.innerHTML = html;
@@ -1512,6 +1561,8 @@ ${story}
       this._scrollTop = 0;
       this._showOldMessages = false;
       this._freeText = '';
+      this._pickedChoiceId = null;
+      this._pickedChoiceText = '';
       this.page = 'story';
       this.render();
       await this._genWorldFlow();
@@ -1686,6 +1737,7 @@ ${story}
         } else if (s.messages.length === 0) {
           if (this.loading) {
             html += '<div class="fl-loading"><span class="fl-spinner"></span>正在造梦…</div>';
+            html += `<div class="fl-streaming-content">${esc(this._streamingText)}</div>`;
           } else {
             html += '<div style="text-align:center;margin-top:16px;"><div style="color:rgba(239,68,68,0.7);font-size:13px;margin-bottom:12px;">世界观生成失败，请重试</div><button class="fl-btn fl-btn-primary" id="fl-retry-world">重新生成世界观</button></div>';
           }
@@ -1733,6 +1785,7 @@ ${story}
             </div>`;
           } else if (this.loading) {
             html += '<div class="fl-loading"><span class="fl-spinner"></span>落笔中…</div>';
+            html += `<div class="fl-streaming-content">${esc(this._streamingText)}</div>`;
           }
         }
       }
@@ -1751,7 +1804,7 @@ ${story}
 
       // 事件绑定
       this.pageEl.querySelector('#fl-story-back').onclick = () => {
-        this.sessionId = null; this._scrollTop = 0; this._showOldMessages = false; this._freeText = ''; this.page = 'list'; this.render();
+        this.sessionId = null; this._scrollTop = 0; this._showOldMessages = false; this._freeText = ''; this._pickedChoiceId = null; this._pickedChoiceText = ''; this.page = 'list'; this.render();
       };
       this.pageEl.querySelector('#fl-delete').onclick = async () => {
         const ok = await this.roche.ui.confirm({ title:'确认删除', message:'确定删除这场梦吗？此操作不可撤销。' });
@@ -1776,13 +1829,21 @@ ${story}
         this.render();
       };
 
-      // 选项点击
+      // 选项点击：将文本填入输入框，供用户确认/修改后再发送
       this.pageEl.querySelectorAll('.fl-choice-btn').forEach(btn => {
         btn.onclick = () => {
           const id = btn.dataset.choiceId;
           const text = btn.querySelector('.fl-choice-text').textContent;
-          this._freeText = '';
-          this._advanceFlow(text, id);
+          this._saveScroll();
+          this._pickedChoiceId = id;
+          this._pickedChoiceText = text;
+          this._freeText = text;
+          this.render();
+          requestAnimationFrame(() => {
+            this._restoreScroll();
+            const inp = this.pageEl && this.pageEl.querySelector('#fl-free');
+            if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+          });
         };
       });
 
@@ -1790,10 +1851,17 @@ ${story}
       const freeInput = this.pageEl.querySelector('#fl-free');
       const freeSend = this.pageEl.querySelector('#fl-free-send');
       if (freeInput) {
-        freeInput.oninput = () => { this._freeText = freeInput.value; };
-        freeInput.onkeydown = e => { if (e.key === 'Enter' && this._freeText.trim()) this._advanceFlow(this._freeText.trim()); };
+        freeInput.oninput = () => {
+          this._freeText = freeInput.value;
+          // 用户修改了填入的选项文本，则取消选项ID关联
+          if (this._pickedChoiceId != null && freeInput.value !== this._pickedChoiceText) {
+            this._pickedChoiceId = null;
+            this._pickedChoiceText = '';
+          }
+        };
+        freeInput.onkeydown = e => { if (e.key === 'Enter' && this._freeText.trim()) this._sendFreeText(); };
       }
-      if (freeSend) freeSend.onclick = () => { const t = this._freeText.trim(); if (t) this._advanceFlow(t); };
+      if (freeSend) freeSend.onclick = () => this._sendFreeText();
 
       // 重新生成
       const regen = this.pageEl.querySelector('#fl-regen');
@@ -1804,20 +1872,42 @@ ${story}
 
     async _genWorldFlow() {
       if (this.loading) return;
-      this.loading = true; this._scrollTop = 0; this.render();
-      try { await this.generateWorld(this.sessionId); }
+      this.loading = true; this._streamingText = ''; this._scrollTop = 0; this.render();
+      try {
+        await this.generateWorld(this.sessionId, (delta, full) => {
+          this._streamingText = full;
+          const el = this.pageEl && this.pageEl.querySelector('.fl-streaming-content');
+          if (el) el.textContent = full;
+        });
+      }
       catch(e) { this.roche.ui.toast('世界观生成失败：'+e.message); }
-      finally { this.loading = false; this.render(); }
+      finally { this.loading = false; this._streamingText = ''; this.render(); }
     }
 
+    _sendFreeText() {
+      const t = this._freeText.trim();
+      if (!t) return;
+      // 若文本与点击填入的选项原文一致，则保留选项ID；用户修改过则视为自由输入
+      const choiceId = (this._pickedChoiceId != null && t === this._pickedChoiceText) ? this._pickedChoiceId : undefined;
+      this._pickedChoiceId = null;
+      this._pickedChoiceText = '';
+      this._advanceFlow(t, choiceId);
+    }
     async _advanceFlow(text, choiceId) {
       if (this.loading) return;
       this._saveScroll();
-      this.loading = true; this.render();
-      try { await this.advanceStory(this.sessionId, text, choiceId); }
+      this.loading = true; this._streamingText = ''; this.render();
+      try {
+        await this.advanceStory(this.sessionId, text, choiceId, (delta, full) => {
+          this._streamingText = full;
+          const el = this.pageEl && this.pageEl.querySelector('.fl-streaming-content');
+          if (el) el.textContent = full;
+        });
+      }
       catch(e) { this.roche.ui.toast('故事推进失败：'+e.message); }
       finally {
         this.loading = false;
+        this._streamingText = '';
         this._freeText = '';
         this.render();
         // 滚动到新内容
@@ -1831,11 +1921,18 @@ ${story}
     async _regenFlow() {
       if (this.loading) return;
       this._saveScroll();
-      this.loading = true; this.render();
-      try { await this.regenerateLast(this.sessionId); }
+      this.loading = true; this._streamingText = ''; this.render();
+      try {
+        await this.regenerateLast(this.sessionId, (delta, full) => {
+          this._streamingText = full;
+          const el = this.pageEl && this.pageEl.querySelector('.fl-streaming-content');
+          if (el) el.textContent = full;
+        });
+      }
       catch(e) { this.roche.ui.toast('重新生成失败：'+e.message); }
       finally {
         this.loading = false;
+        this._streamingText = '';
         this.render();
         requestAnimationFrame(() => {
           const body = this.pageEl && this.pageEl.querySelector('.fl-body');
