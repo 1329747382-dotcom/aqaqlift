@@ -1888,13 +1888,30 @@ ${story}
     async _regenFlow() {
       if (this.loading) return;
       this._saveScroll();
-      this.loading = true; this.render();
-      try { await this.regenerateLast(this.sessionId); }
-      catch(e) { this.roche.ui.toast('重新生成失败：'+e.message); }
+      const s = this.getSession(this.sessionId);
+      if (!s) return;
+      const msgs = s.messages;
+      // 校验最后两条必须是 user + narrator
+      if (msgs.length < 2 || msgs[msgs.length-1].role !== 'narrator' || msgs[msgs.length-2].role !== 'user') {
+        this.roche.ui.toast('没有可重新生成的内容');
+        return;
+      }
+      const lastUserMsg = msgs[msgs.length-2];
+      // 先删除最后两条（用户消息+叙述者消息），让 loading 状态下旧内容和错误提示立刻消失
+      this.updateSession(this.sessionId, { messages: msgs.slice(0, -2) });
+      this.loading = true;
+      this.render();
+      try {
+        await this.advanceStory(this.sessionId, lastUserMsg.text, lastUserMsg.choiceId);
+      }
+      catch(e) {
+        // 生成失败时恢复原消息（含原错误提示）
+        this.updateSession(this.sessionId, { messages: msgs });
+        this.roche.ui.toast('重新生成失败：'+e.message);
+      }
       finally {
         this.loading = false;
         this.render();
-        // 保持在原地，不自动滚动到底部
       }
     }
 
