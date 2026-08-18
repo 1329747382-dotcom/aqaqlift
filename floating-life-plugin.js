@@ -809,7 +809,7 @@ ${story}
       this.pageEl.appendChild(actions);
       if (s.status === 'archived') {
         // 已封存
-      } else if (s.pendingOpening && s.messages.length === 0) {
+      } else if (s.pendingOpening && s.messages.length === 0 && !this.loading) {
         actions.innerHTML = `<div style="display:flex;gap:8px;">
           <button class="fl-btn fl-btn-ghost" id="fl-regen-world">重新生成</button>
           <button class="fl-btn fl-btn-primary" style="flex:1;" id="fl-enter-dream">进入浮生</button>
@@ -817,7 +817,12 @@ ${story}
         actions.querySelector('#fl-enter-dream').onclick = () => { this.confirmOpening(this.sessionId); this.render(); };
         actions.querySelector('#fl-regen-world').onclick = () => this._genWorldFlow();
       } else if (s.messages.length === 0) {
-        actions.innerHTML = '<div class="fl-loading"><span class="fl-spinner"></span>正在造梦…</div>';
+        if (this.loading) {
+          actions.innerHTML = '<div class="fl-loading"><span class="fl-spinner"></span>正在造梦…</div>';
+        } else {
+          actions.innerHTML = '<div style="text-align:center;"><div style="color:rgba(239,68,68,0.8);font-size:13px;margin-bottom:12px;">世界观生成失败，请重试</div><button class="fl-btn fl-btn-primary" id="fl-retry-world">重新生成世界观</button></div>';
+          actions.querySelector('#fl-retry-world').onclick = () => this._genWorldFlow();
+        }
       } else {
         const last = s.messages[s.messages.length - 1];
         if (last && last.role === 'narrator' && last.choices && last.choices.length > 0 && !this.loading) {
@@ -867,6 +872,7 @@ ${story}
     }
 
     async _genWorldFlow() {
+      if (this.loading) return;
       this.loading = true; this.render();
       try { await this.generateWorld(this.sessionId); }
       catch(e) { this.roche.ui.toast('世界观生成失败：'+e.message); }
@@ -874,6 +880,7 @@ ${story}
     }
 
     async _advanceFlow(text, choiceId) {
+      if (this.loading) return;
       this.loading = true; this.render();
       try { await this.advanceStory(this.sessionId, text, choiceId); }
       catch(e) { this.roche.ui.toast('故事推进失败：'+e.message); }
@@ -881,6 +888,7 @@ ${story}
     }
 
     async _regenFlow() {
+      if (this.loading) return;
       this.loading = true; this.render();
       try { await this.regenerateLast(this.sessionId); }
       catch(e) { this.roche.ui.toast('重新生成失败：'+e.message); }
@@ -888,6 +896,7 @@ ${story}
     }
 
     async _archiveFlow() {
+      if (this.loading) return;
       this.loading = true; this.render();
       try { await this.archiveSession(this.sessionId); this.roche.ui.toast('浮生已封存'); }
       catch(e) { this.roche.ui.toast('封存失败：'+e.message); }
