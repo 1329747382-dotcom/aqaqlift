@@ -787,7 +787,7 @@ ${story}
         }
         .roche-plugin-floating-life .fl-msg-action {
           font-size: 13px; line-height: 2.0;
-          color: rgba(129, 140, 248, 0.25);
+          color: rgba(148, 163, 184, 0.55);
           font-style: italic;
           font-family: "Songti SC", "SimSun", serif;
           margin-bottom: 10px; text-indent: 2em; text-align: justify;
@@ -801,7 +801,7 @@ ${story}
 
         /* ===== 用户消息 ===== */
         .roche-plugin-floating-life .fl-msg-user {
-          display: flex; justify-content: flex-end; margin: 4px 0;
+          display: flex; justify-content: flex-end; margin: 4px 0 16px;
         }
         .roche-plugin-floating-life .fl-msg-user .bubble {
           max-width: 80%; padding: 10px 16px;
@@ -876,9 +876,12 @@ ${story}
         .roche-plugin-floating-life .fl-free-input {
           display: flex; gap: 8px; margin-top: 12px;
         }
-        .roche-plugin-floating-life .fl-free-input input {
+        .roche-plugin-floating-life .fl-free-input textarea {
           flex: 1; margin-bottom: 0; border-style: dashed;
-          font-size: 13px; padding: 14px 16px;
+          font-size: 13px; padding: 12px 16px;
+          resize: none; wrap: on; overflow-y: auto;
+          line-height: 1.6; min-height: 42px; max-height: 120px;
+          font-family: inherit;
         }
         .roche-plugin-floating-life .fl-free-send {
           padding: 0 12px; background: rgba(255, 255, 255, 0.04);
@@ -1083,23 +1086,40 @@ ${story}
         { role:'system', content: 'You are a helpful assistant.' },
         { role:'user', content: prompt }
       ];
+      // 从返回值中安全提取文本（兼容 text 属性 / text() 方法 / content 属性）
+      const extractText = (r) => {
+        if (!r) return '';
+        if (typeof r.text === 'function') { try { return r.text() || ''; } catch(e) {} }
+        if (typeof r.text === 'string') return r.text;
+        if (typeof r.content === 'function') { try { return r.content() || ''; } catch(e) {} }
+        if (typeof r.content === 'string') return r.content;
+        return '';
+      };
       // 流式输出：传入 onDelta 回调时尝试流式调用，实时推送片段
       if (typeof onDelta === 'function') {
         try {
           let full = '';
           const r = await this.roche.ai.chat({
             messages, temperature, stream: true,
-            onDelta: (delta) => { full += delta; onDelta(delta, full); }
+            onDelta: (delta) => {
+              // delta 可能是字符串或对象，兼容多种格式
+              const piece = typeof delta === 'string' ? delta
+                : (delta && (delta.text || delta.content || delta.delta || delta.chunk)) || '';
+              if (piece) { full += piece; onDelta(piece, full); }
+            }
           });
-          // 部分实现流式结束后仍在返回值中携带完整文本
-          if (r && (r.text || r.content)) return r.text || r.content;
+          // 优先用流式累积的完整文本
+          if (full) return full;
+          // 回退到返回值中的文本
+          const t = extractText(r);
+          if (t) return t;
           return full;
         } catch(e) {
           console.warn('浮生：流式调用失败，回退非流式模式', e);
         }
       }
       const r = await this.roche.ai.chat({ messages, temperature });
-      return r.text || r.content || '';
+      return extractText(r);
     }
 
     _getSelectedWBIds(session) {
@@ -1777,7 +1797,7 @@ ${story}
             }
             // 自由输入
             html += `<div class="fl-free-input">
-              <input type="text" id="fl-free" placeholder="或者，写下你想做的事…" value="${esc(this._freeText)}" />
+              <textarea id="fl-free" placeholder="或者，写下你想做的事…" rows="1">${esc(this._freeText)}</textarea>
               ${this._freeText.trim() ? `<button class="fl-free-send" id="fl-free-send">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
               </button>` : ''}
@@ -1858,7 +1878,13 @@ ${story}
             this._pickedChoiceText = '';
           }
         };
-        freeInput.onkeydown = e => { if (e.key === 'Enter' && this._freeText.trim()) this._sendFreeText(); };
+        freeInput.onkeydown = e => {
+          // Enter 发送，Shift+Enter 换行
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (this._freeText.trim()) this._sendFreeText();
+          }
+        };
       }
       if (freeSend) freeSend.onclick = () => this._sendFreeText();
 
