@@ -705,7 +705,6 @@ ${story}
         /* ===== 故事页 - 简化世界观（消息开始后顶部） ===== */
         .roche-plugin-floating-life .fl-world-brief {
           padding-bottom: 16px; margin-bottom: 4px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.04);
         }
         .roche-plugin-floating-life .fl-world-brief-scene {
           font-size: 13px; line-height: 2.0;
@@ -759,13 +758,13 @@ ${story}
 
         /* ===== 故事页 - 旁白 ===== */
         .roche-plugin-floating-life .fl-msg-narration {
-          font-size: 14px; line-height: 2.1;
-          color: #cbd5e1;
+          font-size: 13px; line-height: 2.1;
+          color: rgba(148, 163, 184, 0.8);
           font-family: "Songti SC", "SimSun", serif;
           text-indent: 2em; text-align: justify;
           margin-bottom: 14px;
           padding-left: 12px;
-          border-left: 1px solid rgba(203, 213, 225, 0.25);
+          border-left: 1px solid rgba(148, 163, 184, 0.12);
         }
 
         /* ===== 故事页 - 对话（带头像） ===== */
@@ -783,12 +782,12 @@ ${story}
         }
         .roche-plugin-floating-life .fl-dialogue-name {
           font-size: 11px; color: rgba(147, 197, 253, 0.35);
-          letter-spacing: 0.1em; margin-top: 4px;
+          letter-spacing: 0.1em; margin-top: 4px; margin-bottom: 10px;
           text-transform: uppercase;
         }
         .roche-plugin-floating-life .fl-msg-action {
           font-size: 13px; line-height: 2.0;
-          color: rgba(129, 140, 248, 0.4);
+          color: rgba(129, 140, 248, 0.25);
           font-style: italic;
           font-family: "Songti SC", "SimSun", serif;
           margin-bottom: 10px; text-indent: 2em; text-align: justify;
@@ -1005,13 +1004,13 @@ ${story}
 
         /* ===== 流式输出实时文本 ===== */
         .roche-plugin-floating-life .fl-streaming-content {
-          font-size: 14px; line-height: 2.1;
-          color: #cbd5e1;
+          font-size: 13px; line-height: 2.1;
+          color: rgba(148, 163, 184, 0.8);
           font-family: "Songti SC", "SimSun", serif;
           text-indent: 2em; text-align: justify;
           margin-bottom: 14px;
           padding-left: 12px;
-          border-left: 1px solid rgba(203, 213, 225, 0.25);
+          border-left: 1px solid rgba(148, 163, 184, 0.12);
           white-space: pre-wrap;
           min-height: 1px;
         }
