@@ -300,7 +300,6 @@ ${story}
       this._confirmDeleteId = null; // 两次确认删除
       this._showOldMessages = false; // 早期消息折叠状态
       this._freeText = ''; // 自由输入框内容
-      this._streamingText = ''; // 流式输出实时文本缓存
       this._pickedChoiceId = null; // 最近点击填入输入框的选项ID
       this._pickedChoiceText = ''; // 最近点击填入输入框的选项原文（用于判断用户是否修改）
     }
@@ -1005,18 +1004,6 @@ ${story}
           color: #e2e8f0;
         }
 
-        /* ===== 流式输出实时文本 ===== */
-        .roche-plugin-floating-life .fl-streaming-content {
-          font-size: 13px; line-height: 2.1;
-          color: rgba(148, 163, 184, 0.8);
-          font-family: "Songti SC", "SimSun", serif;
-          text-indent: 2em; text-align: justify;
-          margin-bottom: 14px;
-          padding-left: 12px;
-          border-left: 1px solid rgba(148, 163, 184, 0.12);
-          white-space: pre-wrap;
-          min-height: 1px;
-        }
         /* ===== 底部锚点 ===== */
         .roche-plugin-floating-life .fl-bottom-anchor {
           height: 1px; width: 100%;
@@ -1073,7 +1060,7 @@ ${story}
 
     deleteSession(id) { this.sessions = this.sessions.filter(s => s.id !== id); this._save(); }
 
-    async _callAI(prompt, onDelta) {
+    async _callAI(prompt) {
       // 温度：优先读取前端设置参数，读取失败则默认 0.7
       let temperature = 0.7;
       try {
@@ -1086,40 +1073,14 @@ ${story}
         { role:'system', content: 'You are a helpful assistant.' },
         { role:'user', content: prompt }
       ];
-      // 从返回值中安全提取文本（兼容 text 属性 / text() 方法 / content 属性）
-      const extractText = (r) => {
-        if (!r) return '';
-        if (typeof r.text === 'function') { try { return r.text() || ''; } catch(e) {} }
-        if (typeof r.text === 'string') return r.text;
-        if (typeof r.content === 'function') { try { return r.content() || ''; } catch(e) {} }
-        if (typeof r.content === 'string') return r.content;
-        return '';
-      };
-      // 流式输出：传入 onDelta 回调时尝试流式调用，实时推送片段
-      if (typeof onDelta === 'function') {
-        try {
-          let full = '';
-          const r = await this.roche.ai.chat({
-            messages, temperature, stream: true,
-            onDelta: (delta) => {
-              // delta 可能是字符串或对象，兼容多种格式
-              const piece = typeof delta === 'string' ? delta
-                : (delta && (delta.text || delta.content || delta.delta || delta.chunk)) || '';
-              if (piece) { full += piece; onDelta(piece, full); }
-            }
-          });
-          // 优先用流式累积的完整文本
-          if (full) return full;
-          // 回退到返回值中的文本
-          const t = extractText(r);
-          if (t) return t;
-          return full;
-        } catch(e) {
-          console.warn('浮生：流式调用失败，回退非流式模式', e);
-        }
-      }
       const r = await this.roche.ai.chat({ messages, temperature });
-      return extractText(r);
+      // 兼容 text 属性 / text() 方法 / content 属性
+      if (!r) return '';
+      if (typeof r.text === 'function') { try { return r.text() || ''; } catch(e) {} }
+      if (typeof r.text === 'string') return r.text;
+      if (typeof r.content === 'function') { try { return r.content() || ''; } catch(e) {} }
+      if (typeof r.content === 'string') return r.content;
+      return '';
     }
 
     _getSelectedWBIds(session) {
@@ -1144,7 +1105,7 @@ ${story}
       return `<div class="fl-dialogue-avatar" style="background:${color}25;color:${color}">${esc(initial)}</div>`;
     }
 
-    async generateWorld(id, onDelta) {
+    async generateWorld(id) {
       const s = this.getSession(id); if (!s) throw new Error('会话不存在');
       const parts = this.characters.filter(c => s.participantIds.includes(c.id));
       const selectedWBIds = this._getSelectedWBIds(s);
@@ -1153,7 +1114,7 @@ ${story}
         characters: parts, perspective: s.perspective,
         userTheme: s.userTheme, worldBooks: this.worldBooks, selectedWBIds
       });
-      const raw = await this._callAI(prompt, onDelta);
+      const raw = await this._callAI(prompt);
       let d;
       try {
         d = safeParseJSON(raw, '世界观生成');
@@ -1195,7 +1156,7 @@ ${story}
       return this.updateSession(id, { messages: [...s.messages, msg], pendingOpening: undefined });
     }
 
-    async advanceStory(id, userInput, choiceId, onDelta) {
+    async advanceStory(id, userInput, choiceId) {
       const s = this.getSession(id); if (!s) throw new Error('会话不存在');
       if (s.status !== 'active') throw new Error('该会话已封存');
       const parts = this.characters.filter(c => s.participantIds.includes(c.id));
@@ -1209,7 +1170,7 @@ ${story}
         worldBooks: this.worldBooks, selectedWBIds,
         keepLast: SUMMARY_KEEP_LAST
       });
-      const raw = await this._callAI(prompt, onDelta);
+      const raw = await this._callAI(prompt);
       let d;
       try {
         d = safeParseJSON(raw, '故事推进');
@@ -1234,14 +1195,14 @@ ${story}
       return { segments: segs, text, choices, isEnding: !!d.isEnding };
     }
 
-    async regenerateLast(id, onDelta) {
+    async regenerateLast(id) {
       const s = this.getSession(id); if (!s) throw new Error('会话不存在');
       const msgs = s.messages;
       if (msgs.length < 2 || msgs[msgs.length-1].role !== 'narrator' || msgs[msgs.length-2].role !== 'user')
         throw new Error('没有可重新生成的内容');
       const last = msgs[msgs.length-2];
       this.updateSession(id, { messages: msgs.slice(0, -2) });
-      try { return await this.advanceStory(id, last.text, last.choiceId, onDelta); }
+      try { return await this.advanceStory(id, last.text, last.choiceId); }
       catch(e) { this.updateSession(id, { messages: msgs }); throw e; }
     }
 
@@ -1756,7 +1717,6 @@ ${story}
         } else if (s.messages.length === 0) {
           if (this.loading) {
             html += '<div class="fl-loading"><span class="fl-spinner"></span>正在造梦…</div>';
-            html += `<div class="fl-streaming-content">${esc(this._streamingText)}</div>`;
           } else {
             html += '<div style="text-align:center;margin-top:16px;"><div style="color:rgba(239,68,68,0.7);font-size:13px;margin-bottom:12px;">世界观生成失败，请重试</div><button class="fl-btn fl-btn-primary" id="fl-retry-world">重新生成世界观</button></div>';
           }
@@ -1804,7 +1764,6 @@ ${story}
             </div>`;
           } else if (this.loading) {
             html += '<div class="fl-loading"><span class="fl-spinner"></span>落笔中…</div>';
-            html += `<div class="fl-streaming-content">${esc(this._streamingText)}</div>`;
           }
         }
       }
@@ -1897,16 +1856,10 @@ ${story}
 
     async _genWorldFlow() {
       if (this.loading) return;
-      this.loading = true; this._streamingText = ''; this._scrollTop = 0; this.render();
-      try {
-        await this.generateWorld(this.sessionId, (delta, full) => {
-          this._streamingText = full;
-          const el = this.pageEl && this.pageEl.querySelector('.fl-streaming-content');
-          if (el) el.textContent = full;
-        });
-      }
+      this.loading = true; this._scrollTop = 0; this.render();
+      try { await this.generateWorld(this.sessionId); }
       catch(e) { this.roche.ui.toast('世界观生成失败：'+e.message); }
-      finally { this.loading = false; this._streamingText = ''; this.render(); }
+      finally { this.loading = false; this.render(); }
     }
 
     _sendFreeText() {
@@ -1921,48 +1874,27 @@ ${story}
     async _advanceFlow(text, choiceId) {
       if (this.loading) return;
       this._saveScroll();
-      this.loading = true; this._streamingText = ''; this.render();
-      try {
-        await this.advanceStory(this.sessionId, text, choiceId, (delta, full) => {
-          this._streamingText = full;
-          const el = this.pageEl && this.pageEl.querySelector('.fl-streaming-content');
-          if (el) el.textContent = full;
-        });
-      }
+      this.loading = true; this.render();
+      try { await this.advanceStory(this.sessionId, text, choiceId); }
       catch(e) { this.roche.ui.toast('故事推进失败：'+e.message); }
       finally {
         this.loading = false;
-        this._streamingText = '';
         this._freeText = '';
         this.render();
-        // 滚动到新内容
-        requestAnimationFrame(() => {
-          const body = this.pageEl && this.pageEl.querySelector('.fl-body');
-          if (body) body.scrollTop = body.scrollHeight;
-        });
+        // 保持在原地，不自动滚动到底部
       }
     }
 
     async _regenFlow() {
       if (this.loading) return;
       this._saveScroll();
-      this.loading = true; this._streamingText = ''; this.render();
-      try {
-        await this.regenerateLast(this.sessionId, (delta, full) => {
-          this._streamingText = full;
-          const el = this.pageEl && this.pageEl.querySelector('.fl-streaming-content');
-          if (el) el.textContent = full;
-        });
-      }
+      this.loading = true; this.render();
+      try { await this.regenerateLast(this.sessionId); }
       catch(e) { this.roche.ui.toast('重新生成失败：'+e.message); }
       finally {
         this.loading = false;
-        this._streamingText = '';
         this.render();
-        requestAnimationFrame(() => {
-          const body = this.pageEl && this.pageEl.querySelector('.fl-body');
-          if (body) body.scrollTop = body.scrollHeight;
-        });
+        // 保持在原地，不自动滚动到底部
       }
     }
 
