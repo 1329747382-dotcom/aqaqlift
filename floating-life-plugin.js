@@ -328,16 +328,18 @@ ${story}
     _injectStyles() {
       this.styleEl = document.createElement('style');
       this.styleEl.textContent = `
-        .roche-plugin-floating-life { position:relative; width:100%; height:100vh; height:100dvh; min-height:100vh; min-height:100dvh; padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); background:linear-gradient(#141821,#0d1017); color:#e2e8f0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; overflow:hidden; box-sizing:border-box; }
+        .roche-plugin-floating-life { position:relative; width:100%; height:100vh; height:100dvh; min-height:100vh; min-height:100dvh; padding-bottom:env(safe-area-inset-bottom); background:linear-gradient(#141821,#0d1017); color:#e2e8f0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; overflow:hidden; box-sizing:border-box; }
         .roche-plugin-floating-life * { box-sizing:border-box; }
         .roche-plugin-floating-life .fl-rain { position:absolute; inset:0; z-index:0; overflow:hidden; pointer-events:none; }
         .roche-plugin-floating-life .fl-drop { position:absolute; background:rgba(147,197,253,0.6); border-radius:9999px; animation:fl-rain linear infinite; }
         @keyframes fl-rain { 0%{transform:translateY(-20px);opacity:0} 10%{opacity:var(--op)} 90%{opacity:var(--op)} 100%{transform:translateY(100vh);opacity:0} }
         .roche-plugin-floating-life .fl-page { position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:100%; }
-        .roche-plugin-floating-life .fl-header { padding:16px; background:rgba(255,255,255,0.03); backdrop-filter:blur(12px); border-bottom:1px solid rgba(255,255,255,0.06); position:sticky; top:0; z-index:10; }
+        .roche-plugin-floating-life .fl-header { padding:0 16px 16px; padding-top:calc(env(safe-area-inset-top, 0px) + 16px); background:rgba(255,255,255,0.03); backdrop-filter:blur(12px); border-bottom:1px solid rgba(255,255,255,0.06); position:sticky; top:0; z-index:10; }
         .roche-plugin-floating-life .fl-header-row { display:flex; align-items:center; gap:8px; }
         .roche-plugin-floating-life .fl-icon-btn { padding:6px; border-radius:9999px; background:transparent; border:none; color:rgba(148,163,184,0.7); cursor:pointer; transition:all .2s; display:flex; align-items:center; justify-content:center; }
         .roche-plugin-floating-life .fl-icon-btn:hover { background:rgba(255,255,255,0.1); color:#cbd5e1; }
+        .roche-plugin-floating-life .fl-archive-btn-sm { padding:6px 12px; font-size:12px; color:rgba(148,163,184,0.8); background:transparent; border:1px solid rgba(255,255,255,0.08); border-radius:8px; cursor:pointer; transition:all .2s; flex-shrink:0; }
+        .roche-plugin-floating-life .fl-archive-btn-sm:hover { background:rgba(255,255,255,0.06); color:#e2e8f0; }
         .roche-plugin-floating-life .fl-title { font-size:24px; font-weight:700; color:rgba(219,234,254,0.7); }
         .roche-plugin-floating-life .fl-title-sm { font-size:18px; font-weight:500; color:rgba(219,234,254,0.6); font-family:"Songti SC","SimSun",serif; letter-spacing:0.025em; }
         .roche-plugin-floating-life .fl-subtitle { font-size:11px; color:rgba(148,163,184,0.7); margin-top:2px; }
@@ -431,11 +433,13 @@ ${story}
         const drop = document.createElement('div');
         drop.className = 'fl-drop';
         drop.style.left = Math.random() * 100 + '%';
+        drop.style.top = '0';
         drop.style.width = '1px';
         drop.style.height = (12 + Math.random() * 18) + 'px';
         drop.style.setProperty('--op', (0.06 + Math.random() * 0.12).toString());
-        drop.style.animationDelay = Math.random() * 4 + 's';
-        drop.style.animationDuration = (1.2 + Math.random() * 1.8) + 's';
+        const duration = 1.2 + Math.random() * 1.8;
+        drop.style.animationDuration = duration + 's';
+        drop.style.animationDelay = (-duration * Math.random()) + 's';
         rain.appendChild(drop);
       }
       return rain;
@@ -723,9 +727,7 @@ ${story}
             <button class="fl-icon-btn" id="fl-delete" title="删除">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
             </button>
-            ${s.status==='active' ? `<button class="fl-icon-btn" id="fl-archive-header" title="封存" style="color:rgba(191,219,254,0.5);">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
-            </button>` : ''}
+            ${s.status==='active' ? `<button class="fl-archive-btn-sm" id="fl-archive-header">封存</button>` : ''}
           </div>
         </div>
         <div class="fl-body" style="padding:16px 48px;">
