@@ -1,7 +1,7 @@
 {
   "id": "floating-life",
   "name": "浮生",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "一场醒来就忘的梦。用户自主选取世界书条目，构成一次封闭的平行宇宙角色扮演，其内生成的信息不与外部其他功能共享。",
   "author": "FloatingLife",
   "trustLevel": "full",
