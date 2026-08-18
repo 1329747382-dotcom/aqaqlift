@@ -340,15 +340,14 @@ ${story}
       this.styleEl.textContent = `
         /* ===== 根容器 ===== */
         .roche-plugin-floating-life {
-          position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-          width: 100%; height: 100%;
+          position: fixed; top: 0; left: 0; right: 0;
+          width: 100%; height: 100vh; height: 100dvh;
           background: linear-gradient(180deg, #141821 0%, #0d1017 100%);
           color: #cbd5e1;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
           overflow: hidden; box-sizing: border-box;
           display: flex; flex-direction: column;
           padding-top: env(safe-area-inset-top, 0px);
-          padding-bottom: env(safe-area-inset-bottom, 0px);
           z-index: 9999;
         }
         .roche-plugin-floating-life * { box-sizing: border-box; }
@@ -1119,13 +1118,15 @@ ${story}
       try {
         d = safeParseJSON(raw, '世界观生成');
       } catch (e) {
+        // 解析失败时直接用原始文本作为场景和开场白，不显示错误框
+        const rawText = (e.rawText || raw || '').trim();
         d = {
           title: '未命名之梦',
-          scene: e.rawText || raw || '（世界观生成内容解析失败）',
+          scene: rawText || '（世界观生成中出现异常）',
           characterRoles: {}, userRole: '', conflictSeed: '',
           keywords: [], hiddenArc: '',
-          openingSegments: [{ type:'narration', text: e.rawText || raw || '（内容解析失败，请尝试重新生成）' }],
-          choices: [], _parseError: true, _rawText: raw
+          openingSegments: rawText ? [{ type:'narration', text: rawText }] : [],
+          choices: []
         };
       }
       const ws = {
@@ -1140,7 +1141,7 @@ ${story}
       const choices = normalizeChoices(d.choices || []);
       this.updateSession(id, {
         worldSetting: ws,
-        pendingOpening: { openingSegments: segs, openingText: text, openingChoices: choices, parseError: !!d._parseError, rawText: d._rawText || null }
+        pendingOpening: { openingSegments: segs, openingText: text, openingChoices: choices }
       });
       return { worldSetting: ws, openingSegments: segs, openingText: text, openingChoices: choices };
     }
@@ -1163,6 +1164,8 @@ ${story}
       const selectedWBIds = this._getSelectedWBIds(s);
       const userMsg = { id: generateId('msg'), role: 'user', text: userInput, choiceId: choiceId ?? undefined, timestamp: Date.now() };
       const msgs = [...s.messages, userMsg];
+      // 先保存用户消息，让 loading 状态下立即显示用户选择
+      this.updateSession(id, { messages: msgs });
       const prompt = buildStoryPrompt({
         session: {...s, messages: msgs},
         user: this.user || {name:'旅人'},
@@ -1175,9 +1178,11 @@ ${story}
       try {
         d = safeParseJSON(raw, '故事推进');
       } catch (e) {
+        // 解析失败时直接用原始文本作为旁白展示，不显示错误框（API已扣费，尽量呈现内容）
+        const rawText = (e.rawText || raw || '').trim();
         d = {
-          segments: [{ type: 'narration', text: e.rawText || raw || '（故事推进内容解析失败，请尝试重新生成）' }],
-          choices: [], isEnding: false, _parseError: true
+          segments: rawText ? [{ type: 'narration', text: rawText }] : [],
+          choices: [], isEnding: false
         };
       }
       const segs = normalizeSegments(d.segments || []);
@@ -1186,7 +1191,7 @@ ${story}
       const narMsg = {
         id: generateId('msg'), role: 'narrator', text,
         segments: segs.length > 0 ? segs : undefined,
-        choices, isEnding: !!d.isEnding, parseError: !!d._parseError,
+        choices, isEnding: !!d.isEnding,
         timestamp: Date.now()
       };
       const all = [...msgs, narMsg];
@@ -1204,6 +1209,44 @@ ${story}
       this.updateSession(id, { messages: msgs.slice(0, -2) });
       try { return await this.advanceStory(id, last.text, last.choiceId); }
       catch(e) { this.updateSession(id, { messages: msgs }); throw e; }
+    }
+    async regenerateNarrator(id) {
+      // 仅重新生成最后一条 AI 叙述，假设用户消息已在消息末尾（不删除用户选择）
+      const s = this.getSession(id); if (!s) throw new Error('会话不存在');
+      const msgs = s.messages;
+      if (msgs.length < 1 || msgs[msgs.length-1].role !== 'user')
+        throw new Error('没有可重新生成的内容');
+      const lastUser = msgs[msgs.length-1];
+      const parts = this.characters.filter(c => s.participantIds.includes(c.id));
+      const selectedWBIds = this._getSelectedWBIds(s);
+      const prompt = buildStoryPrompt({
+        session: {...s, messages: msgs},
+        user: this.user || {name:'旅人'},
+        characters: parts, userInput: lastUser.text,
+        worldBooks: this.worldBooks, selectedWBIds,
+        keepLast: SUMMARY_KEEP_LAST
+      });
+      const raw = await this._callAI(prompt);
+      let d;
+      try {
+        d = safeParseJSON(raw, '故事推进');
+      } catch (e) {
+        const rawText = (e.rawText || raw || '').trim();
+        d = { segments: rawText ? [{ type: 'narration', text: rawText }] : [], choices: [], isEnding: false };
+      }
+      const segs = normalizeSegments(d.segments || []);
+      const text = segs.length > 0 ? segmentsToText(segs) : String(d.narratorText || '');
+      const choices = normalizeChoices(d.choices || []);
+      const narMsg = {
+        id: generateId('msg'), role: 'narrator', text,
+        segments: segs.length > 0 ? segs : undefined,
+        choices, isEnding: !!d.isEnding,
+        timestamp: Date.now()
+      };
+      const all = [...msgs, narMsg];
+      this.updateSession(id, { messages: all });
+      this._maybeSummary(id, all).catch(e=>console.warn(e));
+      return { segments: segs, text, choices, isEnding: !!d.isEnding };
     }
 
     async archiveSession(id) {
@@ -1642,9 +1685,6 @@ ${story}
           return `<div class="fl-msg-user"><div class="bubble">▸ ${esc(msg.text)}</div></div>`;
         }
         let out = '';
-        if (msg.parseError) {
-          out += `<div class="fl-error-box">内容解析失败，原始输出：<pre>${esc(msg.text)}</pre></div>`;
-        }
         if (msg.segments && msg.segments.length > 0) {
           msg.segments.forEach(seg => {
             if (seg.type === 'narration') {
@@ -1687,9 +1727,6 @@ ${story}
       // 待确认的开场白
       if (s.pendingOpening && s.messages.length === 0) {
         const po = s.pendingOpening;
-        if (po.parseError) {
-          html += `<div class="fl-error-box">世界观生成内容解析失败，原始输出：<pre>${esc(po.rawText || po.openingText)}</pre></div>`;
-        }
         if (po.openingSegments && po.openingSegments.length > 0) {
           po.openingSegments.forEach(seg => {
             if (seg.type === 'narration') {
@@ -1837,12 +1874,9 @@ ${story}
             this._pickedChoiceText = '';
           }
         };
-        freeInput.onkeydown = e => {
-          // Enter 发送，Shift+Enter 换行
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            if (this._freeText.trim()) this._sendFreeText();
-          }
+        // Enter 默认为换行，点击右侧发送键才发送；聚焦时滚动到可见区域避免键盘遮挡
+        freeInput.onfocus = () => {
+          setTimeout(() => freeInput.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
         };
       }
       if (freeSend) freeSend.onclick = () => this._sendFreeText();
@@ -1891,21 +1925,18 @@ ${story}
       const s = this.getSession(this.sessionId);
       if (!s) return;
       const msgs = s.messages;
-      // 校验最后两条必须是 user + narrator
       if (msgs.length < 2 || msgs[msgs.length-1].role !== 'narrator' || msgs[msgs.length-2].role !== 'user') {
         this.roche.ui.toast('没有可重新生成的内容');
         return;
       }
-      const lastUserMsg = msgs[msgs.length-2];
-      // 先删除最后两条（用户消息+叙述者消息），让 loading 状态下旧内容和错误提示立刻消失
-      this.updateSession(this.sessionId, { messages: msgs.slice(0, -2) });
+      // 只删除最后一条 AI 叙述，保留用户选择，让 loading 时旧叙述立刻消失
+      this.updateSession(this.sessionId, { messages: msgs.slice(0, -1) });
       this.loading = true;
       this.render();
       try {
-        await this.advanceStory(this.sessionId, lastUserMsg.text, lastUserMsg.choiceId);
+        await this.regenerateNarrator(this.sessionId);
       }
       catch(e) {
-        // 生成失败时恢复原消息（含原错误提示）
         this.updateSession(this.sessionId, { messages: msgs });
         this.roche.ui.toast('重新生成失败：'+e.message);
       }
