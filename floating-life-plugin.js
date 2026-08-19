@@ -61,8 +61,8 @@
   function getPerspectiveText(perspective, userName, userGender) {
     const pronoun = (userGender === '男' || userGender === '男性') ? '他' : '她';
     switch (perspective) {
-      case 'second-person': return '使用第二人称叙事。AI角色自称「我」，称呼用户角色为「你」；用户角色也自称「我」，称呼AI角色为「你」。双方以自然对话形式互动，像真实的两人对话一样互相称呼。';
-      case 'first-person': return '使用第一人称叙事，AI 角色自称「我」。用户角色不参与故事，只在章节末尾给出剧情引导，推动角色的故事走向。';
+      case 'second-person': return '使用第二人称叙事，自称「我」，称呼用户角色为「你」。';
+      case 'first-person': return '使用第一人称叙事，自称「我」。用户角色不参与故事，只在章节末尾给出剧情引导，推动故事走向。';
       default: return `使用第三人称有限视角叙事，称呼用户角色为「${userName}」或「${pronoun}」。`;
     }
   }
@@ -86,7 +86,7 @@
   function buildCoreRules(worldBooks, globalPresetIds) {
     const text = formatWorldBooks(worldBooks, globalPresetIds);
     if (!text) return '';
-    return `【核心守则】（最高优先级，必须严格遵守，凌驾于所有其他设定之上）\n${text}\n`;
+    return `【核心守则】（必须严格遵守）\n${text}\n`;
   }
   function buildSettingContext(worldSetting, characters, user, worldBooks, selectedWBIds) {
     const parts = [];
@@ -357,9 +357,9 @@ ${story}
         }
         .roche-plugin-floating-life .fl-header {
           flex-shrink: 0; padding: 0 16px 16px; padding-top: 16px;
-          background: rgba(255, 255, 255, 0.03);
+          background: rgba(20, 24, 33, 0.75);
           backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.04);
           position: sticky; top: 0; z-index: 10;
         }
         .roche-plugin-floating-life .fl-header-row {
@@ -1038,17 +1038,17 @@ ${story}
     _createRain() {
       const rain = document.createElement('div');
       rain.className = 'fl-rain';
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < 40; i++) {
         const drop = document.createElement('div');
         drop.className = 'fl-drop';
         drop.style.left = Math.random() * 100 + '%';
         drop.style.top = '0';
-        drop.style.width = '1.5px';
-        drop.style.height = (15 + Math.random() * 25) + 'px';
-        drop.style.setProperty('--drop-op', (0.2 + Math.random() * 0.25).toString());
+        drop.style.width = '1px';
+        drop.style.height = (12 + Math.random() * 18) + 'px';
+        drop.style.setProperty('--drop-op', (0.06 + Math.random() * 0.12).toString());
         const duration = 1.2 + Math.random() * 1.8;
         drop.style.animationDuration = duration + 's';
-        drop.style.animationDelay = (-duration * Math.random()) + 's';
+        drop.style.animationDelay = (Math.random() * 4) + 's';
         rain.appendChild(drop);
       }
       return rain;
