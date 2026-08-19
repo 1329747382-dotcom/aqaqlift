@@ -1,19 +1,20 @@
 /**
- * 浮生 (FloatingLife) - Roche 全信任 JS 插件 v4.1
+ * 浮生 (FloatingLife) - Roche 全信任 JS 插件 v4.2
  * 一场醒来就忘的梦
- * UI 深度对齐 Echoes v4 原件浮生功能
  *
- * v4.1 更新：
- * - 回车键改为换行，仅点击发送按钮发送
- * - 自由输入发送按钮始终跟随输入框显示（无内容时禁用）
- * - 修复底部厚边与输入法键盘遮挡（100dvh + 移除安全区内边距）
- * - 用户选择发送时立即显示在窗口内，重新生成时保留用户消息
- * - "正在造梦"加载状态居中显示
- * - textarea 自动增高
+ * v4.2 更新：
+ * - 生成页世界书选择项可折叠/展开
+ * - 人称默认改为第二人称
+ * - 第二人称提示词优化（双方互称你）
+ * - 新增全局最高优先级预设（首页按钮，全局生效世界书）
+ * - 新增[核心守则]模块，注入系统提示词最开头
+ * - 故事页文本长按可编辑保存
+ * - 生成页全局预设已选项标灰不可重复选
  */
 (function () {
   'use strict';
   const STORAGE_KEY = 'floating_life_sessions';
+  const GLOBAL_PRESET_KEY = 'floating_life_global_preset';
   const SUMMARY_THRESHOLD = 16;
   const SUMMARY_KEEP_LAST = 8;
 
@@ -60,7 +61,7 @@
   function getPerspectiveText(perspective, userName, userGender) {
     const pronoun = (userGender === '男' || userGender === '男性') ? '他' : '她';
     switch (perspective) {
-      case 'second-person': return '使用第二人称叙事，AI 角色自称「我」，称呼用户角色为「你」。';
+      case 'second-person': return '使用第二人称叙事。AI角色自称「我」，称呼用户角色为「你」；用户角色也自称「我」，称呼AI角色为「你」。双方以自然对话形式互动，像真实的两人对话一样互相称呼。';
       case 'first-person': return '使用第一人称叙事，AI 角色自称「我」。用户角色不参与故事，只在章节末尾给出剧情引导，推动角色的故事走向。';
       default: return `使用第三人称有限视角叙事，称呼用户角色为「${userName}」或「${pronoun}」。`;
     }
@@ -68,7 +69,7 @@
   function formatWorldBooks(worldBooks, selectedIds) {
     const selected = (worldBooks || []).filter(w => selectedIds.includes(w.id));
     if (selected.length === 0) return '';
-    return '【用户选取的世界书】\n' + selected.map(w =>
+    return selected.map(w =>
       `[${w.title || w.name || '未命名'}]（类型：${w.categoryId || w.category || '未知'}）\n${w.content || w.text || ''}`
     ).join('\n');
   }
@@ -82,10 +83,15 @@
       return lines.join('\n');
     }).join('\n---\n');
   }
+  function buildCoreRules(worldBooks, globalPresetIds) {
+    const text = formatWorldBooks(worldBooks, globalPresetIds);
+    if (!text) return '';
+    return `【核心守则】（最高优先级，必须严格遵守，凌驾于所有其他设定之上）\n${text}\n`;
+  }
   function buildSettingContext(worldSetting, characters, user, worldBooks, selectedWBIds) {
     const parts = [];
     const wbText = formatWorldBooks(worldBooks, selectedWBIds);
-    if (wbText) parts.push(wbText);
+    if (wbText) parts.push(`【用户选取的世界书】\n${wbText}`);
     parts.push(`【世界观】\n场景：${worldSetting.scene || ''}\n冲突种子：${worldSetting.conflictSeed || ''}\n氛围关键词：${(worldSetting.keywords || []).join('、')}\n暗线：${worldSetting.hiddenArc || ''}`);
     const roleLines = Object.entries(worldSetting.characterRoles || {}).map(([id, role]) => {
       const char = (characters || []).find(c => c.id === id);
@@ -146,11 +152,12 @@
     const perspText = getPerspectiveText(p.perspective, userName, p.user.gender);
     const wbText = formatWorldBooks(p.worldBooks, p.selectedWBIds);
     const charIds = (p.characters || []).map(c => c.id).join(', ');
-    const wbSection = wbText ? `## 用户选取的世界书\n以下是用户主动选取的世界书条目，在构建世界观时必须遵守：\n${wbText}\n\n` : '';
+    const coreRules = buildCoreRules(p.worldBooks, p.globalPresetIds || []);
+    const wbSection = wbText ? `## 用户选取的世界书\n以下是用户主动选取的世界书条目，在构建世界观时参考：\n${wbText}\n\n` : '';
     const themeSection = p.userTheme
       ? `## 用户指定题材方向（最高优先级）\n用户明确要求的题材是：「${p.userTheme}」\n你必须严格按照这个方向构建世界观。\n\n`
       : `## 题材方向\n由你自由发挥，请大胆创造有趣且出人意料的设定。\n\n`;
-    return `你是「浮生」系统的世界架构师。
+    return `${coreRules}你是「浮生」系统的世界架构师。
 任务：基于下列角色的性格和人设，构建一个平行宇宙世界观，并撰写开场白。
 ## 角色信息
 ### 用户
@@ -192,7 +199,8 @@ ${perspText}
     const historyCtx = buildHistoryContext(p.session.messages, p.session.summaries, p.keepLast);
     const perspText = getPerspectiveText(p.session.perspective, userName, p.user.gender);
     const actionCount = (p.session.messages || []).filter(m => m.role === 'user').length;
-    return `你是「浮生」故事的叙述者，负责推进平行宇宙剧情。
+    const coreRules = buildCoreRules(p.worldBooks, p.globalPresetIds || []);
+    return `${coreRules}你是「浮生」故事的叙述者，负责推进平行宇宙剧情。
 你同时扮演所有参与角色，在叙事中穿插对话和动作。
 ## 世界观与角色
 ${settingCtx}
@@ -268,7 +276,7 @@ ${story}
       this.sessionId = null;
       this.selChars = [];
       this.selWBIds = [];
-      this.selPerspective = 'third-limited';
+      this.selPerspective = 'second-person';
       this.draftTheme = '';
       this.loading = false;
       this.styleEl = null;
@@ -280,6 +288,11 @@ ${story}
       this._freeText = '';
       this._pickedChoiceId = null;
       this._pickedChoiceText = '';
+      this._wbCollapsed = {};
+      this.globalPresetWBIds = [];
+      this._editingMsgId = null;
+      this._longPressTimer = null;
+      this._presetWBCollapsed = {};
     }
     async init() {
       this._injectStyles();
@@ -307,16 +320,16 @@ ${story}
         }
       } catch(e) { this.worldBooks = []; }
       try { this.sessions = (await this.roche.storage.get(STORAGE_KEY)) || []; } catch(e) { this.sessions = []; }
+      try { this.globalPresetWBIds = (await this.roche.storage.get(GLOBAL_PRESET_KEY)) || []; } catch(e) { this.globalPresetWBIds = []; }
     }
     async _save() { try { await this.roche.storage.set(STORAGE_KEY, this.sessions); } catch(e) {} }
+    async _saveGlobalPreset() { try { await this.roche.storage.set(GLOBAL_PRESET_KEY, this.globalPresetWBIds); } catch(e) {} }
     _injectStyles() {
       this.styleEl = document.createElement('style');
       this.styleEl.textContent = `
         .roche-plugin-floating-life {
           position: fixed; top: 0; left: 0; right: 0;
-          width: 100%;
-          height: 100%;
-          height: 100dvh;
+          width: 100%; height: 100%; height: 100dvh;
           background: linear-gradient(180deg, #141821 0%, #0d1017 100%);
           color: #cbd5e1;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -345,8 +358,7 @@ ${story}
         .roche-plugin-floating-life .fl-header {
           flex-shrink: 0; padding: 0 16px 16px; padding-top: 16px;
           background: rgba(255, 255, 255, 0.03);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
+          backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
           border-bottom: 1px solid rgba(255, 255, 255, 0.06);
           position: sticky; top: 0; z-index: 10;
         }
@@ -595,6 +607,26 @@ ${story}
         .roche-plugin-floating-life .fl-wb-cat-title {
           font-size: 11px; color: rgba(71, 85, 105, 0.8);
           margin-bottom: 6px; padding: 0 2px;
+          cursor: pointer; display: flex; align-items: center; gap: 4px;
+          user-select: none;
+        }
+        .roche-plugin-floating-life .fl-wb-cat-title:hover {
+          color: rgba(148, 163, 184, 0.8);
+        }
+        .roche-plugin-floating-life .fl-wb-cat-arrow {
+          transition: transform .2s; display: inline-block;
+          font-size: 9px;
+        }
+        .roche-plugin-floating-life .fl-wb-cat-arrow.expanded {
+          transform: rotate(90deg);
+        }
+        .roche-plugin-floating-life .fl-wb-items {
+          overflow: hidden;
+          max-height: 1000px;
+          transition: max-height .3s ease;
+        }
+        .roche-plugin-floating-life .fl-wb-items.collapsed {
+          max-height: 0;
         }
         .roche-plugin-floating-life .fl-wb-item {
           width: 100%; padding: 8px 12px;
@@ -610,6 +642,16 @@ ${story}
         .roche-plugin-floating-life .fl-wb-item.active {
           background: rgba(147, 197, 253, 0.06);
           border-color: rgba(147, 197, 253, 0.2);
+        }
+        .roche-plugin-floating-life .fl-wb-item.global-locked {
+          opacity: 0.4;
+          pointer-events: none;
+        }
+        .roche-plugin-floating-life .fl-wb-item.global-locked .fl-wb-name::after {
+          content: "（全局预设）";
+          font-size: 10px;
+          color: rgba(147, 197, 253, 0.5);
+          margin-left: 4px;
         }
         .roche-plugin-floating-life .fl-wb-check {
           width: 14px; height: 14px; border-radius: 3px;
@@ -708,9 +750,11 @@ ${story}
           margin-bottom: 14px;
           padding-left: 12px;
           border-left: 1px solid rgba(148, 163, 184, 0.12);
+          position: relative;
         }
         .roche-plugin-floating-life .fl-msg-dialogue {
           margin: 20px 0; text-align: center;
+          position: relative;
         }
         .roche-plugin-floating-life .fl-dialogue-avatar {
           width: 36px; height: 36px; border-radius: 9999px;
@@ -741,6 +785,7 @@ ${story}
         }
         .roche-plugin-floating-life .fl-msg-user {
           display: flex; justify-content: flex-end; margin: 4px 0 16px;
+          position: relative;
         }
         .roche-plugin-floating-life .fl-msg-user .bubble {
           max-width: 80%; padding: 10px 16px;
@@ -749,6 +794,40 @@ ${story}
           border-radius: 8px; font-size: 13px; line-height: 1.8;
           color: rgba(191, 219, 254, 0.4);
           font-family: "Songti SC", "SimSun", serif;
+        }
+        .roche-plugin-floating-life .fl-edit-btn {
+          position: absolute;
+          top: 4px; right: 4px;
+          padding: 3px 8px;
+          background: rgba(147, 197, 253, 0.1);
+          border: 1px solid rgba(147, 197, 253, 0.2);
+          border-radius: 4px;
+          font-size: 10px;
+          color: rgba(147, 197, 253, 0.6);
+          cursor: pointer;
+          z-index: 5;
+          display: none;
+        }
+        .roche-plugin-floating-life .fl-msg-narration:hover .fl-edit-btn,
+        .roche-plugin-floating-life .fl-msg-dialogue:hover .fl-edit-btn,
+        .roche-plugin-floating-life .fl-msg-user:hover .fl-edit-btn {
+          display: block;
+        }
+        .roche-plugin-floating-life .fl-edit-textarea {
+          width: 100%;
+          min-height: 60px;
+          padding: 8px 12px;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(147, 197, 253, 0.3);
+          border-radius: 6px;
+          color: #cbd5e1;
+          font-size: 13px;
+          font-family: inherit;
+          line-height: 1.8;
+          resize: vertical;
+        }
+        .roche-plugin-floating-life .fl-edit-actions {
+          display: flex; gap: 8px; margin-top: 6px; justify-content: flex-end;
         }
         .roche-plugin-floating-life .fl-old-toggle {
           width: 100%; display: flex; align-items: center;
@@ -831,8 +910,7 @@ ${story}
           color: #cbd5e1;
         }
         .roche-plugin-floating-life .fl-free-send:disabled {
-          opacity: 0.3;
-          pointer-events: none;
+          opacity: 0.3; pointer-events: none;
         }
         .roche-plugin-floating-life .fl-regen-row {
           display: flex; justify-content: flex-end; margin-top: 6px;
@@ -949,6 +1027,11 @@ ${story}
         .roche-plugin-floating-life .fl-bottom-anchor {
           height: 1px; width: 100%;
         }
+        .roche-plugin-floating-life .fl-preset-count {
+          font-size: 10px;
+          color: rgba(147, 197, 253, 0.5);
+          margin-left: 6px;
+        }
       `;
       document.head.appendChild(this.styleEl);
     }
@@ -972,6 +1055,7 @@ ${story}
     }
     destroy() {
       this._removeScrollListener();
+      if (this._longPressTimer) { clearTimeout(this._longPressTimer); this._longPressTimer = null; }
       if (this.styleEl && this.styleEl.parentNode) this.styleEl.parentNode.removeChild(this.styleEl);
     }
     getSession(id) { return this.sessions.find(s => s.id === id) || null; }
@@ -982,7 +1066,7 @@ ${story}
         worldSetting: { title:'', scene:'', characterRoles:{}, userRole:'', conflictSeed:'', keywords:[], hiddenArc:'' },
         participantIds: opts.participantIds || [],
         selectedWorldBookIds: opts.selectedWorldBookIds || [],
-        perspective: opts.perspective || 'third-limited',
+        perspective: opts.perspective || 'second-person',
         userTheme: opts.userTheme || undefined,
         messages: [], summaries: [], verdict: null
       };
@@ -1039,7 +1123,8 @@ ${story}
       const prompt = buildWorldPrompt({
         user: this.user || {name:'旅人'},
         characters: parts, perspective: s.perspective,
-        userTheme: s.userTheme, worldBooks: this.worldBooks, selectedWBIds
+        userTheme: s.userTheme, worldBooks: this.worldBooks, selectedWBIds,
+        globalPresetIds: this.globalPresetWBIds
       });
       const raw = await this._callAI(prompt);
       let d;
@@ -1098,7 +1183,8 @@ ${story}
         user: this.user || {name:'旅人'},
         characters: parts, userInput,
         worldBooks: this.worldBooks, selectedWBIds,
-        keepLast: SUMMARY_KEEP_LAST
+        keepLast: SUMMARY_KEEP_LAST,
+        globalPresetIds: this.globalPresetWBIds
       });
       const raw = await this._callAI(prompt);
       let d;
@@ -1203,11 +1289,13 @@ ${story}
       this.pageEl = root;
       if (this.page === 'list') this._renderList();
       else if (this.page === 'create') this._renderCreate();
+      else if (this.page === 'preset') this._renderPreset();
       else if (this.page === 'story') this._renderStory();
     }
     _renderList() {
       const activeSessions = this.sessions.filter(s => s.status === 'active');
       const archivedSessions = this.sessions.filter(s => s.status === 'archived');
+      const presetCount = this.globalPresetWBIds.length;
       let html = `
         <div class="fl-header">
           <div class="fl-header-row">
@@ -1218,8 +1306,9 @@ ${story}
               <div class="fl-title">浮生</div>
               <div class="fl-subtitle">一场醒来就忘的梦</div>
             </div>
-            <button class="fl-icon-btn" id="fl-theme-toggle" title="主题">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg>
+            <button class="fl-icon-btn" id="fl-preset-btn" title="最高优先级预设">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+              ${presetCount > 0 ? `<span class="fl-preset-count">${presetCount}</span>` : ''}
             </button>
             <button class="fl-icon-btn" id="fl-new" title="开启浮生">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>
@@ -1293,8 +1382,8 @@ ${story}
       const startEmpty = this.pageEl.querySelector('#fl-start-empty');
       if (startEmpty) startEmpty.onclick = () => { this.selChars = []; this.selWBIds = []; this.draftTheme = ''; this._scrollTop = 0; this.page = 'create'; this.render(); };
       this.pageEl.querySelector('#fl-back-home').onclick = () => this.roche.ui.closeApp();
-      const themeBtn = this.pageEl.querySelector('#fl-theme-toggle');
-      if (themeBtn) themeBtn.onclick = () => this.roche.ui.toast('主题切换功能开发中');
+      const presetBtn = this.pageEl.querySelector('#fl-preset-btn');
+      if (presetBtn) presetBtn.onclick = () => { this._scrollTop = 0; this.page = 'preset'; this.render(); };
     }
     _renderSessionCard(s) {
       const title = s.worldSetting.title || (s.worldSetting.keywords||[]).join('·') || '新的浮生';
@@ -1317,6 +1406,39 @@ ${story}
         <div class="fl-card-status">${isArchived ? '已封存' : `${s.messages.length} 条消息`}</div>
       </div>`;
     }
+    _renderWBList(worldBooks, selectedIds, collapsedState, globalLockedIds, onCatClick, onItemClick) {
+      const wbByCat = {};
+      (worldBooks || []).forEach(w => {
+        const cat = w.categoryName || w.categoryId || '其他';
+        if (!wbByCat[cat]) wbByCat[cat] = [];
+        wbByCat[cat].push(w);
+      });
+      let html = '';
+      Object.entries(wbByCat).forEach(([catName, items]) => {
+        const isCollapsed = !!collapsedState[catName];
+        const selectedInCat = items.filter(w => selectedIds.includes(w.id)).length;
+        html += `<div class="fl-wb-group">
+          <div class="fl-wb-cat-title" data-cat="${esc(catName)}">
+            <span class="fl-wb-cat-arrow ${isCollapsed ? '' : 'expanded'}">▶</span>
+            <span>${esc(catName)}</span>
+            ${selectedInCat > 0 ? `<span class="fl-preset-count">已选${selectedInCat}</span>` : ''}
+          </div>
+          <div class="fl-wb-items ${isCollapsed ? 'collapsed' : ''}">`;
+        items.forEach(w => {
+          const name = w.title || w.name || '未命名';
+          const active = selectedIds.includes(w.id) ? 'active' : '';
+          const locked = (globalLockedIds || []).includes(w.id) ? 'global-locked' : '';
+          html += `<button class="fl-wb-item ${active} ${locked}" data-id="${w.id}">
+            <div class="fl-wb-check">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#0d1017" stroke-width="3"><path d="M20 6L9 17l-5-5" /></svg>
+            </div>
+            <span class="fl-wb-name">${esc(name)}</span>
+          </button>`;
+        });
+        html += `</div></div>`;
+      });
+      return html;
+    }
     _renderCreate() {
       const pronoun = (this.user && (this.user.gender==='男'||this.user.gender==='男性')) ? '他' : '她';
       const perspectives = [
@@ -1324,12 +1446,6 @@ ${story}
         { value:'second-person', label:'第二人称', desc:'「你推开了那扇门…」' },
         { value:'first-person', label:'第一人称', desc:'「我推开了那扇门…」' }
       ];
-      const wbByCat = {};
-      this.worldBooks.forEach(w => {
-        const cat = w.categoryName || w.categoryId || '其他';
-        if (!wbByCat[cat]) wbByCat[cat] = [];
-        wbByCat[cat].push(w);
-      });
       let html = `
         <div class="fl-header">
           <div class="fl-header-row">
@@ -1369,25 +1485,11 @@ ${story}
       });
       html += `</div><div style="margin-bottom:24px;">
         <div class="fl-section-label">世界书（自主选取）</div>
-        <div class="fl-wb-hint">选取后，浮生将在构建世界观和推进剧情时参考这些条目。不选则完全基于角色人设自由生成。</div>`;
+        <div class="fl-wb-hint">选取后，浮生将在构建世界观和推进剧情时参考这些条目。已设为全局预设的条目会自动生效并标灰，无需重复选择。</div>`;
       if (this.worldBooks.length === 0) {
         html += '<div style="text-align:center;padding:14px;color:rgba(71,85,105,0.8);font-size:11px;">暂无可用的世界书条目</div>';
       } else {
-        Object.entries(wbByCat).forEach(([catName, items]) => {
-          html += `<div class="fl-wb-group">
-            <div class="fl-wb-cat-title">${esc(catName)}</div>`;
-          items.forEach(w => {
-            const name = w.title || w.name || '未命名';
-            const active = this.selWBIds.includes(w.id) ? 'active' : '';
-            html += `<button class="fl-wb-item ${active}" data-id="${w.id}">
-              <div class="fl-wb-check">
-                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#0d1017" stroke-width="3"><path d="M20 6L9 17l-5-5" /></svg>
-              </div>
-              <span class="fl-wb-name">${esc(name)}</span>
-            </button>`;
-          });
-          html += `</div>`;
-        });
+        html += this._renderWBList(this.worldBooks, this.selWBIds, this._wbCollapsed, this.globalPresetWBIds);
       }
       html += `</div><div style="margin-bottom:8px;">
         <div class="fl-section-label">题材方向 <span style="color:rgba(71,85,105,0.8);font-size:11px;">（可选，留空则 AI 随机生成）</span></div>
@@ -1413,7 +1515,15 @@ ${story}
         this.selPerspective = item.dataset.value;
         this.render();
       });
+      this.pageEl.querySelectorAll('.fl-wb-cat-title').forEach(el => el.onclick = () => {
+        this._saveScroll();
+        this._saveDraftTheme();
+        const cat = el.dataset.cat;
+        this._wbCollapsed[cat] = !this._wbCollapsed[cat];
+        this.render();
+      });
       this.pageEl.querySelectorAll('.fl-wb-item').forEach(item => item.onclick = () => {
+        if (item.classList.contains('global-locked')) return;
         this._saveScroll();
         this._saveDraftTheme();
         const id = item.dataset.id;
@@ -1422,6 +1532,53 @@ ${story}
         this.render();
       });
       this.pageEl.querySelector('#fl-start-dream').onclick = () => this._startDream();
+    }
+    _renderPreset() {
+      let html = `
+        <div class="fl-header">
+          <div class="fl-header-row">
+            <button class="fl-icon-btn" id="fl-preset-back">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6" /></svg>
+            </button>
+            <div class="fl-header-center">
+              <div class="fl-title-sm">最高优先级预设</div>
+              <div class="fl-subtitle">选中的世界书将作为核心守则全局生效</div>
+            </div>
+          </div>
+        </div>
+        <div class="fl-body fl-body-narrow">
+          <div style="margin-bottom:16px;">
+            <div class="fl-wb-hint" style="color:rgba(148,163,184,0.7);">这些世界书条目将以【核心守则】的形式注入每一次 AI 调用的最开头，优先级高于所有其他设定。适用于固定的世界观规则、角色设定、风格要求等。</div>
+          </div>
+          <div class="fl-section-label">选择全局预设世界书（已选 ${this.globalPresetWBIds.length} 项）</div>`;
+      if (this.worldBooks.length === 0) {
+        html += '<div style="text-align:center;padding:24px;color:rgba(100,116,139,0.8);font-size:12px;">暂无世界书，请先在 Roche 中创建世界书条目</div>';
+      } else {
+        html += this._renderWBList(this.worldBooks, this.globalPresetWBIds, this._presetWBCollapsed, []);
+      }
+      html += `</div>
+      <div class="fl-footer">
+        <button class="fl-btn fl-btn-block fl-btn-primary" id="fl-preset-save">保存预设</button>
+      </div>`;
+      this.pageEl.innerHTML = html;
+      this.pageEl.querySelector('#fl-preset-back').onclick = () => { this.page='list'; this._scrollTop=0; this.render(); };
+      this.pageEl.querySelectorAll('.fl-wb-cat-title').forEach(el => el.onclick = () => {
+        const cat = el.dataset.cat;
+        this._presetWBCollapsed[cat] = !this._presetWBCollapsed[cat];
+        this.render();
+      });
+      this.pageEl.querySelectorAll('.fl-wb-item').forEach(item => item.onclick = () => {
+        const id = item.dataset.id;
+        if (this.globalPresetWBIds.includes(id)) this.globalPresetWBIds = this.globalPresetWBIds.filter(x=>x!==id);
+        else this.globalPresetWBIds.push(id);
+        this.render();
+      });
+      this.pageEl.querySelector('#fl-preset-save').onclick = async () => {
+        await this._saveGlobalPreset();
+        this.roche.ui.toast(`已保存 ${this.globalPresetWBIds.length} 项全局预设`);
+        this.page='list';
+        this.render();
+      };
     }
     _saveDraftTheme() {
       const input = this.pageEl && this.pageEl.querySelector('#fl-theme');
@@ -1527,20 +1684,47 @@ ${story}
       const oldMessages = coveredUpTo >= 0 ? s.messages.slice(0, coveredUpTo + 1) : [];
       const recentMessages = coveredUpTo >= 0 ? s.messages.slice(coveredUpTo + 1) : s.messages;
       const renderMsg = (msg) => {
+        const isEditing = this._editingMsgId === msg.id;
         if (msg.role === 'user') {
-          return `<div class="fl-msg-user"><div class="bubble">▸ ${esc(msg.text)}</div></div>`;
+          if (isEditing) {
+            return `<div class="fl-msg-user" data-msg-id="${msg.id}">
+              <div style="max-width:80%;width:100%;">
+                <textarea class="fl-edit-textarea" id="fl-edit-textarea">${esc(msg.text)}</textarea>
+                <div class="fl-edit-actions">
+                  <button class="fl-btn fl-btn-ghost fl-btn-sm" id="fl-edit-cancel">取消</button>
+                  <button class="fl-btn fl-btn-primary fl-btn-sm" id="fl-edit-save">保存</button>
+                </div>
+              </div>
+            </div>`;
+          }
+          return `<div class="fl-msg-user" data-msg-id="${msg.id}">
+            <button class="fl-edit-btn" data-edit-id="${msg.id}">编辑</button>
+            <div class="bubble">▸ ${esc(msg.text)}</div>
+          </div>`;
         }
         let out = '';
         if (msg.parseError) {
           out += `<div class="fl-error-box">内容解析失败，原始输出：<pre>${esc(msg.text)}</pre></div>`;
         }
-        if (msg.segments && msg.segments.length > 0) {
+        if (isEditing) {
+          out += `<div data-msg-id="${msg.id}">
+            <textarea class="fl-edit-textarea" id="fl-edit-textarea">${esc(msg.text)}</textarea>
+            <div class="fl-edit-actions">
+              <button class="fl-btn fl-btn-ghost fl-btn-sm" id="fl-edit-cancel">取消</button>
+              <button class="fl-btn fl-btn-primary fl-btn-sm" id="fl-edit-save">保存</button>
+            </div>
+          </div>`;
+        } else if (msg.segments && msg.segments.length > 0) {
           msg.segments.forEach(seg => {
             if (seg.type === 'narration') {
-              out += `<div class="fl-msg-narration">${esc(seg.text)}</div>`;
+              out += `<div class="fl-msg-narration" data-msg-id="${msg.id}">
+                <button class="fl-edit-btn" data-edit-id="${msg.id}">编辑</button>
+                ${esc(seg.text)}
+              </div>`;
             } else {
               const matchedChar = this._getCharByName(seg.character);
-              out += `<div class="fl-msg-dialogue">
+              out += `<div class="fl-msg-dialogue" data-msg-id="${msg.id}">
+                <button class="fl-edit-btn" data-edit-id="${msg.id}">编辑</button>
                 ${this._renderCharAvatar(matchedChar, seg.character || '')}
                 <div class="fl-dialogue-name">${esc(seg.character || '')}</div>
                 ${seg.action ? `<div class="fl-msg-action">${esc(seg.action)}</div>` : ''}
@@ -1549,7 +1733,10 @@ ${story}
             }
           });
         } else if (msg.text) {
-          out += `<div class="fl-msg-narration">${esc(msg.text)}</div>`;
+          out += `<div class="fl-msg-narration" data-msg-id="${msg.id}">
+            <button class="fl-edit-btn" data-edit-id="${msg.id}">编辑</button>
+            ${esc(msg.text)}
+          </div>`;
         }
         return out;
       };
@@ -1642,7 +1829,6 @@ ${story}
           } else if (this.loading) {
             html += '<div class="fl-loading"><span class="fl-spinner"></span>落笔中…</div>';
           } else if (last && last.role === 'user') {
-            // 上一次生成失败，用户消息保留，显示重试按钮
             html += `<div class="fl-error-box">故事推进失败，请重试。</div>
             <div style="display:flex;gap:12px;margin-top:12px;">
               <button class="fl-btn fl-btn-primary" style="flex:1;" id="fl-retry-advance">重新生成</button>
@@ -1656,7 +1842,7 @@ ${story}
       requestAnimationFrame(() => this._restoreScroll());
       if (!isArchived) this._setupScrollButton();
       this.pageEl.querySelector('#fl-story-back').onclick = () => {
-        this.sessionId = null; this._scrollTop = 0; this._showOldMessages = false; this._freeText = ''; this._pickedChoiceId = null; this._pickedChoiceText = ''; this.page = 'list'; this.render();
+        this.sessionId = null; this._scrollTop = 0; this._showOldMessages = false; this._freeText = ''; this._pickedChoiceId = null; this._pickedChoiceText = ''; this._editingMsgId = null; this.page = 'list'; this.render();
       };
       this.pageEl.querySelector('#fl-delete').onclick = async () => {
         const ok = await this.roche.ui.confirm({ title:'确认删除', message:'确定删除这场梦吗？此操作不可撤销。' });
@@ -1674,6 +1860,49 @@ ${story}
       if (oldToggle) oldToggle.onclick = () => {
         this._saveScroll();
         this._showOldMessages = !this._showOldMessages;
+        this.render();
+      };
+      // 编辑按钮事件
+      this.pageEl.querySelectorAll('.fl-edit-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          this._editingMsgId = btn.dataset.editId;
+          this._saveScroll();
+          this.render();
+          requestAnimationFrame(() => {
+            const ta = this.pageEl.querySelector('#fl-edit-textarea');
+            if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+          });
+        };
+      });
+      const editCancel = this.pageEl.querySelector('#fl-edit-cancel');
+      if (editCancel) editCancel.onclick = () => { this._editingMsgId = null; this.render(); };
+      const editSave = this.pageEl.querySelector('#fl-edit-save');
+      if (editSave) editSave.onclick = () => {
+        const ta = this.pageEl.querySelector('#fl-edit-textarea');
+        if (!ta) return;
+        const newText = ta.value.trim();
+        if (!newText) { this.roche.ui.toast('内容不能为空'); return; }
+        const s = this.getSession(this.sessionId);
+        if (!s) return;
+        const msgIndex = s.messages.findIndex(m => m.id === this._editingMsgId);
+        if (msgIndex === -1) return;
+        const updatedMessages = [...s.messages];
+        const msg = updatedMessages[msgIndex];
+        if (msg.role === 'narrator' && msg.segments && msg.segments.length > 0) {
+          // 对于叙述者消息，如果有多个segments，更新第一个narration的文本
+          const firstNarration = msg.segments.findIndex(seg => seg.type === 'narration');
+          if (firstNarration >= 0) {
+            updatedMessages[msgIndex] = { ...msg, text: newText, segments: msg.segments.map((seg, i) => i === firstNarration ? { ...seg, text: newText } : seg) };
+          } else {
+            updatedMessages[msgIndex] = { ...msg, text: newText };
+          }
+        } else {
+          updatedMessages[msgIndex] = { ...msg, text: newText };
+        }
+        this.updateSession(this.sessionId, { messages: updatedMessages });
+        this._editingMsgId = null;
+        this.roche.ui.toast('已保存编辑');
         this.render();
       };
       this.pageEl.querySelectorAll('.fl-choice-btn').forEach(btn => {
@@ -1712,10 +1941,7 @@ ${story}
             this._pickedChoiceText = '';
           }
         };
-        // 回车键改为换行，不再发送；仅点击发送按钮发送
-        freeInput.onkeydown = e => {
-          // Enter 默认为换行，不做拦截
-        };
+        freeInput.onkeydown = e => {};
       }
       if (freeSend) freeSend.onclick = () => this._sendFreeText();
       const retryAdvance = this.pageEl.querySelector('#fl-retry-advance');
@@ -1762,7 +1988,6 @@ ${story}
     async _advanceFlow(text, choiceId) {
       if (this.loading) return;
       this._saveScroll();
-      // 先将用户消息加入 session，让用户立刻在窗口中看到自己的选择
       const s = this.getSession(this.sessionId);
       if (s) {
         const userMsg = {
@@ -1787,7 +2012,6 @@ ${story}
         await this.advanceStory(this.sessionId, text, choiceId, true);
       }
       catch(e) {
-        // 生成失败时保留用户消息，用户可点击重试按钮重新生成
         this.roche.ui.toast('故事推进失败：'+e.message);
       }
       finally {
@@ -1806,7 +2030,6 @@ ${story}
         return;
       }
       const lastUserMsg = msgs[msgs.length-2];
-      // 只删除最后一条叙述者消息，保留用户消息
       this.updateSession(this.sessionId, { messages: msgs.slice(0, -1) });
       this.loading = true;
       this.render();
@@ -1833,7 +2056,7 @@ ${story}
   window.RochePlugin.register({
     id: 'floating-life',
     name: '浮生',
-    version: '4.1.0',
+    version: '4.2.0',
     apps: [{
       id: 'floating-life-home',
       name: '浮生',
