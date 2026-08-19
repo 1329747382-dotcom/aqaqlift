@@ -291,6 +291,7 @@ ${story}
       this._wbCollapsed = {};
       this.globalPresetWBIds = [];
       this._editingMsgId = null;
+      this._editingSegIndex = null;
       this._longPressTimer = null;
       this._presetWBCollapsed = {};
     }
@@ -528,6 +529,7 @@ ${story}
           background: rgba(255, 255, 255, 0.05); color: #e2e8f0;
         }
         .roche-plugin-floating-life .fl-btn-block { width: 100%; }
+        .roche-plugin-floating-life .fl-btn-sm { padding: 6px 14px; font-size: 12px; }
         .roche-plugin-floating-life .fl-btn-dream {
           font-family: "Songti SC", "SimSun", serif;
           letter-spacing: 0.3em;
@@ -1684,9 +1686,9 @@ ${story}
       const oldMessages = coveredUpTo >= 0 ? s.messages.slice(0, coveredUpTo + 1) : [];
       const recentMessages = coveredUpTo >= 0 ? s.messages.slice(coveredUpTo + 1) : s.messages;
       const renderMsg = (msg) => {
-        const isEditing = this._editingMsgId === msg.id;
+        const isMsgEditing = this._editingMsgId === msg.id;
         if (msg.role === 'user') {
-          if (isEditing) {
+          if (isMsgEditing) {
             return `<div class="fl-msg-user" data-msg-id="${msg.id}">
               <div style="max-width:80%;width:100%;">
                 <textarea class="fl-edit-textarea" id="fl-edit-textarea">${esc(msg.text)}</textarea>
@@ -1706,37 +1708,65 @@ ${story}
         if (msg.parseError) {
           out += `<div class="fl-error-box">内容解析失败，原始输出：<pre>${esc(msg.text)}</pre></div>`;
         }
-        if (isEditing) {
-          out += `<div data-msg-id="${msg.id}">
-            <textarea class="fl-edit-textarea" id="fl-edit-textarea">${esc(msg.text)}</textarea>
-            <div class="fl-edit-actions">
-              <button class="fl-btn fl-btn-ghost fl-btn-sm" id="fl-edit-cancel">取消</button>
-              <button class="fl-btn fl-btn-primary fl-btn-sm" id="fl-edit-save">保存</button>
-            </div>
-          </div>`;
-        } else if (msg.segments && msg.segments.length > 0) {
-          msg.segments.forEach(seg => {
+        if (msg.segments && msg.segments.length > 0) {
+          // 结构化段落：每个 segment 独立编辑，格式保持不变
+          msg.segments.forEach((seg, i) => {
+            const isSegEditing = isMsgEditing && this._editingSegIndex === i;
             if (seg.type === 'narration') {
-              out += `<div class="fl-msg-narration" data-msg-id="${msg.id}">
-                <button class="fl-edit-btn" data-edit-id="${msg.id}">编辑</button>
-                ${esc(seg.text)}
-              </div>`;
+              if (isSegEditing) {
+                out += `<div class="fl-msg-narration" data-msg-id="${msg.id}" data-seg-index="${i}">
+                  <textarea class="fl-edit-textarea" id="fl-edit-textarea">${esc(seg.text)}</textarea>
+                  <div class="fl-edit-actions">
+                    <button class="fl-btn fl-btn-ghost fl-btn-sm" id="fl-edit-cancel">取消</button>
+                    <button class="fl-btn fl-btn-primary fl-btn-sm" id="fl-edit-save">保存</button>
+                  </div>
+                </div>`;
+              } else {
+                out += `<div class="fl-msg-narration" data-msg-id="${msg.id}">
+                  <button class="fl-edit-btn" data-edit-id="${msg.id}" data-seg-index="${i}">编辑</button>
+                  ${esc(seg.text)}
+                </div>`;
+              }
             } else {
               const matchedChar = this._getCharByName(seg.character);
-              out += `<div class="fl-msg-dialogue" data-msg-id="${msg.id}">
-                <button class="fl-edit-btn" data-edit-id="${msg.id}">编辑</button>
-                ${this._renderCharAvatar(matchedChar, seg.character || '')}
-                <div class="fl-dialogue-name">${esc(seg.character || '')}</div>
-                ${seg.action ? `<div class="fl-msg-action">${esc(seg.action)}</div>` : ''}
-                <div class="fl-msg-text">「${esc(seg.text)}」</div>
-              </div>`;
+              if (isSegEditing) {
+                out += `<div class="fl-msg-dialogue" data-msg-id="${msg.id}" data-seg-index="${i}">
+                  ${this._renderCharAvatar(matchedChar, seg.character || '')}
+                  <div class="fl-dialogue-name">${esc(seg.character || '')}</div>
+                  ${seg.action ? `<div class="fl-msg-action">${esc(seg.action)}</div>` : ''}
+                  <textarea class="fl-edit-textarea" id="fl-edit-textarea" style="text-align:center;text-indent:0;">${esc(seg.text)}</textarea>
+                  <div class="fl-edit-actions">
+                    <button class="fl-btn fl-btn-ghost fl-btn-sm" id="fl-edit-cancel">取消</button>
+                    <button class="fl-btn fl-btn-primary fl-btn-sm" id="fl-edit-save">保存</button>
+                  </div>
+                </div>`;
+              } else {
+                out += `<div class="fl-msg-dialogue" data-msg-id="${msg.id}">
+                  <button class="fl-edit-btn" data-edit-id="${msg.id}" data-seg-index="${i}">编辑</button>
+                  ${this._renderCharAvatar(matchedChar, seg.character || '')}
+                  <div class="fl-dialogue-name">${esc(seg.character || '')}</div>
+                  ${seg.action ? `<div class="fl-msg-action">${esc(seg.action)}</div>` : ''}
+                  <div class="fl-msg-text">「${esc(seg.text)}」</div>
+                </div>`;
+              }
             }
           });
         } else if (msg.text) {
-          out += `<div class="fl-msg-narration" data-msg-id="${msg.id}">
-            <button class="fl-edit-btn" data-edit-id="${msg.id}">编辑</button>
-            ${esc(msg.text)}
-          </div>`;
+          // 纯文本叙述者消息：整体编辑
+          if (isMsgEditing) {
+            out += `<div class="fl-msg-narration" data-msg-id="${msg.id}">
+              <textarea class="fl-edit-textarea" id="fl-edit-textarea">${esc(msg.text)}</textarea>
+              <div class="fl-edit-actions">
+                <button class="fl-btn fl-btn-ghost fl-btn-sm" id="fl-edit-cancel">取消</button>
+                <button class="fl-btn fl-btn-primary fl-btn-sm" id="fl-edit-save">保存</button>
+              </div>
+            </div>`;
+          } else {
+            out += `<div class="fl-msg-narration" data-msg-id="${msg.id}">
+              <button class="fl-edit-btn" data-edit-id="${msg.id}">编辑</button>
+              ${esc(msg.text)}
+            </div>`;
+          }
         }
         return out;
       };
@@ -1842,7 +1872,7 @@ ${story}
       requestAnimationFrame(() => this._restoreScroll());
       if (!isArchived) this._setupScrollButton();
       this.pageEl.querySelector('#fl-story-back').onclick = () => {
-        this.sessionId = null; this._scrollTop = 0; this._showOldMessages = false; this._freeText = ''; this._pickedChoiceId = null; this._pickedChoiceText = ''; this._editingMsgId = null; this.page = 'list'; this.render();
+        this.sessionId = null; this._scrollTop = 0; this._showOldMessages = false; this._freeText = ''; this._pickedChoiceId = null; this._pickedChoiceText = ''; this._editingMsgId = null; this._editingSegIndex = null; this.page = 'list'; this.render();
       };
       this.pageEl.querySelector('#fl-delete').onclick = async () => {
         const ok = await this.roche.ui.confirm({ title:'确认删除', message:'确定删除这场梦吗？此操作不可撤销。' });
@@ -1867,6 +1897,7 @@ ${story}
         btn.onclick = (e) => {
           e.stopPropagation();
           this._editingMsgId = btn.dataset.editId;
+          this._editingSegIndex = btn.dataset.segIndex != null ? parseInt(btn.dataset.segIndex, 10) : null;
           this._saveScroll();
           this.render();
           requestAnimationFrame(() => {
@@ -1876,7 +1907,7 @@ ${story}
         };
       });
       const editCancel = this.pageEl.querySelector('#fl-edit-cancel');
-      if (editCancel) editCancel.onclick = () => { this._editingMsgId = null; this.render(); };
+      if (editCancel) editCancel.onclick = () => { this._editingMsgId = null; this._editingSegIndex = null; this.render(); };
       const editSave = this.pageEl.querySelector('#fl-edit-save');
       if (editSave) editSave.onclick = () => {
         const ta = this.pageEl.querySelector('#fl-edit-textarea');
@@ -1888,20 +1919,21 @@ ${story}
         const msgIndex = s.messages.findIndex(m => m.id === this._editingMsgId);
         if (msgIndex === -1) return;
         const updatedMessages = [...s.messages];
-        const msg = updatedMessages[msgIndex];
-        if (msg.role === 'narrator' && msg.segments && msg.segments.length > 0) {
-          // 对于叙述者消息，如果有多个segments，更新第一个narration的文本
-          const firstNarration = msg.segments.findIndex(seg => seg.type === 'narration');
-          if (firstNarration >= 0) {
-            updatedMessages[msgIndex] = { ...msg, text: newText, segments: msg.segments.map((seg, i) => i === firstNarration ? { ...seg, text: newText } : seg) };
-          } else {
-            updatedMessages[msgIndex] = { ...msg, text: newText };
-          }
+        const msg = { ...updatedMessages[msgIndex] };
+        if (this._editingSegIndex != null && msg.segments && msg.segments[this._editingSegIndex]) {
+          // 段落级编辑：只更新对应 segment 的文本，其余段落保持不变
+          msg.segments = msg.segments.map((seg, i) =>
+            i === this._editingSegIndex ? { ...seg, text: newText } : seg
+          );
+          msg.text = segmentsToText(msg.segments);
         } else {
-          updatedMessages[msgIndex] = { ...msg, text: newText };
+          // 整条消息编辑（用户消息或无 segments 的叙述者消息）
+          msg.text = newText;
         }
+        updatedMessages[msgIndex] = msg;
         this.updateSession(this.sessionId, { messages: updatedMessages });
         this._editingMsgId = null;
+        this._editingSegIndex = null;
         this.roche.ui.toast('已保存编辑');
         this.render();
       };
