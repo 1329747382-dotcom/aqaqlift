@@ -1478,7 +1478,7 @@ ${story}
           <div class="fl-verdict-text">${esc(s.verdict)}</div>
         </div>`;
       }
-      if (s.messages.length === 0 && s.worldSetting.scene) {
+      if (s.messages.length === 0 && s.worldSetting.scene && !this.loading) {
         html += `<div class="fl-parallel-label">平 行 世 界</div><div class="fl-divider"></div>
           <div class="fl-world-card">
             <div class="fl-world-label">时 代 与 场 景</div>
@@ -1641,6 +1641,12 @@ ${story}
             </div>`;
           } else if (this.loading) {
             html += '<div class="fl-loading"><span class="fl-spinner"></span>落笔中…</div>';
+          } else if (last && last.role === 'user') {
+            // 上一次生成失败，用户消息保留，显示重试按钮
+            html += `<div class="fl-error-box">故事推进失败，请重试。</div>
+            <div style="display:flex;gap:12px;margin-top:12px;">
+              <button class="fl-btn fl-btn-primary" style="flex:1;" id="fl-retry-advance">重新生成</button>
+            </div>`;
           }
         }
       }
@@ -1712,6 +1718,27 @@ ${story}
         };
       }
       if (freeSend) freeSend.onclick = () => this._sendFreeText();
+      const retryAdvance = this.pageEl.querySelector('#fl-retry-advance');
+      if (retryAdvance) retryAdvance.onclick = () => {
+        if (this.loading) return;
+        const s = this.getSession(this.sessionId);
+        if (!s) return;
+        const lastUser = [...s.messages].reverse().find(m => m.role === 'user');
+        if (!lastUser) return;
+        this._saveScroll();
+        this.loading = true;
+        this.render();
+        (async () => {
+          try {
+            await this.advanceStory(this.sessionId, lastUser.text, lastUser.choiceId, true);
+          } catch(e) {
+            this.roche.ui.toast('故事推进失败：'+e.message);
+          } finally {
+            this.loading = false;
+            this.render();
+          }
+        })();
+      };
       const regen = this.pageEl.querySelector('#fl-regen');
       if (regen) regen.onclick = () => this._regenFlow();
       const archiveBtn = this.pageEl.querySelector('#fl-archive');
@@ -1760,10 +1787,7 @@ ${story}
         await this.advanceStory(this.sessionId, text, choiceId, true);
       }
       catch(e) {
-        const cur = this.getSession(this.sessionId);
-        if (cur && cur.messages.length > 0 && cur.messages[cur.messages.length-1].role === 'user') {
-          this.updateSession(this.sessionId, { messages: cur.messages.slice(0, -1) });
-        }
+        // 生成失败时保留用户消息，用户可点击重试按钮重新生成
         this.roche.ui.toast('故事推进失败：'+e.message);
       }
       finally {
