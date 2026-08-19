@@ -1283,7 +1283,6 @@ ${story}
       this.container.innerHTML = '';
       const root = document.createElement('div');
       root.className = 'roche-plugin-floating-life';
-      root.appendChild(this._createRain());
       this.container.appendChild(root);
       this.root = root;
       this.pageEl = root;
@@ -1291,6 +1290,7 @@ ${story}
       else if (this.page === 'create') this._renderCreate();
       else if (this.page === 'preset') this._renderPreset();
       else if (this.page === 'story') this._renderStory();
+      root.appendChild(this._createRain());
     }
     _renderList() {
       const activeSessions = this.sessions.filter(s => s.status === 'active');
