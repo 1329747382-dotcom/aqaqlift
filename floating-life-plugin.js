@@ -82,7 +82,7 @@
       return lines.join('\n');
     }).join('\n---\n');
   }
-  function buildContext(worldSetting, messages, summaries, characters, user, keepLast, worldBooks, selectedWBIds) {
+  function buildSettingContext(worldSetting, characters, user, worldBooks, selectedWBIds) {
     const parts = [];
     const wbText = formatWorldBooks(worldBooks, selectedWBIds);
     if (wbText) parts.push(wbText);
@@ -98,6 +98,10 @@
       roleLines.unshift(`${user.name || user.handle || '用户'}（用户）：${worldSetting.userRole || ''}${userOrigin}`);
     } else { roleLines.unshift(`用户：${worldSetting.userRole || ''}`); }
     parts.push(`【角色（平行身份）】\n${roleLines.join('\n')}`);
+    return parts.join('\n');
+  }
+  function buildHistoryContext(messages, summaries, keepLast) {
+    const parts = [];
     if (summaries && summaries.length > 0) parts.push(`【之前的故事摘要】\n${summaries.map(s => s.text).join('\n')}`);
     const recent = (messages || []).slice(-keepLast);
     if (recent.length > 0) parts.push(`【最近对话】\n${recent.map(m => m.role === 'narrator' ? `[叙述者] ${m.text}` : `[用户选择] ${m.text}`).join('\n')}`);
@@ -184,15 +188,18 @@ ${perspText}
   }
   function buildStoryPrompt(p) {
     const userName = p.user.name || p.user.handle || '旅人';
-    const ctx = buildContext(p.session.worldSetting, p.session.messages, p.session.summaries, p.characters, p.user, p.keepLast, p.worldBooks, p.selectedWBIds);
+    const settingCtx = buildSettingContext(p.session.worldSetting, p.characters, p.user, p.worldBooks, p.selectedWBIds);
+    const historyCtx = buildHistoryContext(p.session.messages, p.session.summaries, p.keepLast);
     const perspText = getPerspectiveText(p.session.perspective, userName, p.user.gender);
     const actionCount = (p.session.messages || []).filter(m => m.role === 'user').length;
     return `你是「浮生」故事的叙述者，负责推进平行宇宙剧情。
 你同时扮演所有参与角色，在叙事中穿插对话和动作。
-## 上下文
-${ctx}
+## 世界观与角色
+${settingCtx}
 ## 叙事视角
 ${perspText}
+## 历史上下文
+${historyCtx}
 ## 用户的行动
 ${p.userInput}
 ## 当前进度
