@@ -61,7 +61,7 @@
   function getPerspectiveText(perspective, userName, userGender) {
     const pronoun = (userGender === '男' || userGender === '男性') ? '他' : '她';
     switch (perspective) {
-      case 'second-person': return '使用第二人称叙事，自称「我」，称呼用户角色为「你」。';
+      case 'second-person': return '使用第二人称叙事，自称「我」，称呼用户为「你」。';
       case 'first-person': return '使用第一人称叙事，自称「我」。用户角色不参与故事，只在章节末尾给出剧情引导，推动故事走向。';
       default: return `使用第三人称有限视角叙事，称呼用户角色为「${userName}」或「${pronoun}」。`;
     }
@@ -201,7 +201,7 @@ ${perspText}
     const actionCount = (p.session.messages || []).filter(m => m.role === 'user').length;
     const coreRules = buildCoreRules(p.worldBooks, p.globalPresetIds || []);
     return `${coreRules}你是「浮生」故事的叙述者，负责推进平行宇宙剧情。
-你同时扮演所有参与角色，在叙事中穿插对话和动作。
+你同时扮演所有参与角色（除user角色），在叙事中穿插对话和动作。
 ## 世界观与角色
 ${settingCtx}
 ## 叙事视角
