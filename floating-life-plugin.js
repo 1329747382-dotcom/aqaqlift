@@ -347,7 +347,7 @@ ${story}
           position: absolute;
           background: rgba(147, 197, 253, 0.6);
           border-radius: 9999px;
-          animation: fl-rain linear infinite;
+          animation: fl-rain linear infinite backwards;
         }
         @keyframes fl-rain {
           0% { transform: translateY(-20px); opacity: 0; }
@@ -1290,7 +1290,7 @@ ${story}
       else if (this.page === 'create') this._renderCreate();
       else if (this.page === 'preset') this._renderPreset();
       else if (this.page === 'story') this._renderStory();
-      root.appendChild(this._createRain());
+      if (this.page === 'story') root.appendChild(this._createRain());
     }
     _renderList() {
       const activeSessions = this.sessions.filter(s => s.status === 'active');
