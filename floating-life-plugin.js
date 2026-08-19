@@ -60,8 +60,8 @@
   function getPerspectiveText(perspective, userName, userGender) {
     const pronoun = (userGender === '男' || userGender === '男性') ? '他' : '她';
     switch (perspective) {
-      case 'second-person': return '使用第二人称叙事，自称「我」，称呼用户为「你」。';
-      case 'first-person': return '使用第一人称叙事，称呼角色自己为「我」，用户不参与故事只引导角色的故事走向。';
+      case 'second-person': return '使用第二人称叙事，AI 角色自称「我」，称呼用户角色为「你」。';
+      case 'first-person': return '使用第一人称叙事，AI 角色自称「我」。用户角色不参与故事，只在章节末尾给出剧情引导，推动角色的故事走向。';
       default: return `使用第三人称有限视角叙事，称呼用户角色为「${userName}」或「${pronoun}」。`;
     }
   }
@@ -1561,7 +1561,7 @@ ${story}
         }
       }
       recentMessages.forEach(msg => { html += renderMsg(msg); });
-      if (s.pendingOpening && s.messages.length === 0) {
+      if (s.pendingOpening && s.messages.length === 0 && !this.loading) {
         const po = s.pendingOpening;
         if (po.parseError) {
           html += `<div class="fl-error-box">世界观生成内容解析失败，原始输出：<pre>${esc(po.rawText || po.openingText)}</pre></div>`;
